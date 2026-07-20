@@ -2,8 +2,6 @@ package diff
 
 import (
 	"testing"
-
-	"github.com/crizah/Worm/diff"
 )
 
 func TestLCS(t *testing.T) {
@@ -15,10 +13,11 @@ func TestLCS(t *testing.T) {
 	}{
 		{"BMOAL", "BLOA", "BOA"},
 		{"let inicio = 10", "let inicio = 125", "let inicio = 1"},
+		{"xyz", "abc", ""},
 	}
 
 	for i, test := range tests {
-		got := diff.LCS(test.start, test.edited)
+		got := LCS(test.start, test.edited)
 		if got != test.expected {
 			t.Fatalf("tests[%d]- wrong. expected=%s, got=%s", i, test.expected, got)
 		}
