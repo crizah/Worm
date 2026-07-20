@@ -4,7 +4,7 @@ type state struct {
 	i, j int
 }
 
-func LCS(a string, b string) string {
+func LCSstring(a string, b string) string {
 	cache := make(map[state]string)
 	return solve(a, b, 0, 0, cache)
 }
