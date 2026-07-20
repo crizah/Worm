@@ -8,7 +8,7 @@ import (
 
 // tokenise a string by lines
 
-func tokeniseFile(filepath string) ([]string, error) {
+func TokeniseFile(filepath string) ([]string, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err

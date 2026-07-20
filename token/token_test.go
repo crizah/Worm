@@ -41,7 +41,7 @@ func TestTokenFile(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got, err := tokeniseFile(test.input)
+		got, err := TokeniseFile(test.input)
 		if err != nil {
 			t.Fatalf("tests[%d]- error %s", i, err.Error())
 
