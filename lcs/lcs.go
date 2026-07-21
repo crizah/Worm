@@ -1,4 +1,4 @@
-package diff
+package lcs
 
 type state struct {
 	i, j int
