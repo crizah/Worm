@@ -58,3 +58,10 @@ func GetDiffTokens(a []string, b []string, lcs []string) []DiffOperation {
 
 	return diffs
 }
+
+func IsDiff(a string, b string) bool {
+	// returns true if there is a diff between the 2 files (except whitespace)
+	// last saved version vs current saved version of file
+	return false
+
+}
