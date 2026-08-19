@@ -2,6 +2,10 @@ package schema
 
 // defines the go structs we compare againts on a diff
 
+type Schema struct {
+	DbName string
+	Tables *[]Table
+}
 type Table struct {
 	Name    string
 	Columns *[]Column

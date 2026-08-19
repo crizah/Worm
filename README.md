@@ -1,0 +1,3 @@
+- right now, assuming the .sql files are ordered like 01_users.sql etc, not users.sql
+- lexigraphiclly sorting rn for migrations, and trusting the users word it
+- can use a graph for dependency via FKs later on to validate it
