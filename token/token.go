@@ -1,46 +1,59 @@
 package token
 
-import (
-	"bufio"
-	"os"
-	"strings"
-)
+type TokenType string
 
-// tokenise a string by lines
-
-func TokeniseFile(filepath string) ([]string, error) {
-	file, err := os.Open(filepath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-
-	// scanner.Scan() automatically stops at every newline
-	for scanner.Scan() {
-		str := strings.TrimSpace(scanner.Text())
-		if str != "" { // get rid of empty lines too
-			lines = append(lines, str)
-
-		}
-
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return lines, nil
+type Token struct {
+	Type    TokenType
+	Literal string
 }
 
-func tokeniseString(s string) []string {
-	arr := strings.Split(s, "\n")
-	for i, str := range arr {
-		arr[i] = strings.TrimSpace(str)
+const (
+	// keywords
+	CREATE     = "CREATE"
+	TABLE      = "TABLE"
+	ALTER      = "ALTER"
+	ADD        = "ADD"
+	DROP       = "DROP"
+	COLUMN     = "COLUMN"
+	PRIMARY    = "PRIMARY"
+	KEY        = "KEY"
+	FOREIGN    = "FOREIGN"
+	REFERENCES = "REFERENCE"
+	NOT        = "NOT"
+	NULL       = "NULL"
+	DEFAULT    = "DEFAULT"
+	UNIQUE     = "UNIQUE"
+	CHECK      = "CHECK"
+	CONSTRAINT = "CONSTRAINT"
+	IF         = "IF"
+	EXISTS     = "EXISTS"
+	ON         = "ON"
+	CASCADE    = "CASCADE"
+	RESTRICT   = "RESTRICT"
 
+	// symbols
+	LPAREN    = "("
+	RPAREN    = ")"
+	COMMA     = ","
+	SEMICOLON = ";"
+
+	// ERRORS
+	ILLEGAL = "ILLEGAL" // token we have not defined
+	EOF     = "EOF"     // signifies end of file
+
+	// IDENTIFIERS
+	IDENT = "IDENT" // users, id, username, UUID, Timestampz, etc
+
+	// LITERALS
+	INT    = "INT"    // 255
+	STRING = "STRING" // 'hello'
+
+)
+
+func NewToken(t TokenType, ch byte) *Token {
+	return &Token{
+		Type:    t,
+		Literal: string(ch),
 	}
 
-	return arr
 }
