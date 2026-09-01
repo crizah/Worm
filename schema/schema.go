@@ -4,13 +4,13 @@ package schema
 
 type Schema struct {
 	DbName string
-	Tables *[]Table
+	Tables []Table
 }
 type Table struct {
 	Name    string
-	Columns *[]Column
+	Columns []Column
 	PK      Index
-	FKs     *[]ForeignKey
+	FKs     []ForeignKey
 	Indexes []*Index
 }
 
@@ -20,14 +20,14 @@ type Column struct {
 	IsNullable bool // if column is not null
 	IsPK       bool // if column is pk
 	Default    Expr
-	FKs        *[]ForeignKey
+	FKs        []ForeignKey
 }
 
 // Index
 type Index struct {
 	Name    string
 	Table   *Table
-	Columns *[]Column
+	Columns []Column
 	isPK    bool
 }
 
@@ -59,14 +59,17 @@ type Expr interface {
 }
 
 type RawExpr struct {
-	// for defaults which are string eg: "1", "false"
-	Val string
+	// for defaults which are: "hello", "false", 1 , enums
+	// can be integres, boolean, enums etc, but value will always be in string
+	Val     string
+	ExpType Type
 }
+
 type MethodExpr struct {
-	// for defaults that are methods eg: "Now()", "gen_random_uuid()""
+	// for defaults that are methods eg: "now()", "gen_random_uuid()""
 	Name string // Now
 	Args []Expr // empty, but can have args
 }
 
-func (e *RawExpr) expr()    {}
-func (e *MethodExpr) expr() {}
+func (e RawExpr) expr()    {}
+func (e MethodExpr) expr() {}

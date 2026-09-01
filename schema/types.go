@@ -23,14 +23,23 @@ type (
 	}
 
 	EnumType struct {
-		Val    string
-		Values *[]string // enum values
+		Name   string
+		Values []string // enum values
+	}
 
+	TextType struct {
+		Val string
+	}
+
+	JSONType struct {
+		Val string
 	}
 )
 
-func (t *BoolType) t()
-func (t *IntegerType) t()
-func (t *UUIDType) t()
-func (t *TimeType) t()
-func (t *EnumType) t()
+func (t BoolType) t()    {}
+func (t IntegerType) t() {}
+func (t UUIDType) t()    {}
+func (t TimeType) t()    {}
+func (t EnumType) t()    {}
+func (t TextType) t()    {}
+func (t JSONType) t()    {}

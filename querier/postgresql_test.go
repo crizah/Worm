@@ -18,7 +18,7 @@ func TestPostQuerier(t *testing.T) {
 	godotenv.Load()
 	conn := os.Getenv("DB_CONN")
 
-	q, err := NewPostgresQuerier(conn)
+	q, err := NewPQuerier(conn)
 	if err != nil {
 		t.Fatalf("connecting: %v", err)
 	}
@@ -31,8 +31,8 @@ func TestPostQuerier(t *testing.T) {
 			t.Fatalf("Tables: %v", err)
 		}
 		want := []string{"organizations", "users"}
-		if !equalStrings(*tables, want) {
-			t.Fatalf("Tables = %v, want %v", *tables, want)
+		if !equalStrings(tables, want) {
+			t.Fatalf("Tables = %v, want %v", tables, want)
 		}
 	})
 
@@ -41,7 +41,7 @@ func TestPostQuerier(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Columns: %v", err)
 		}
-		byKey := columnsByKey(*cols)
+		byKey := columnsByKey(cols)
 
 		id, ok := byKey["organizations.id"]
 		if !ok {
@@ -99,7 +99,7 @@ func TestPostQuerier(t *testing.T) {
 		}
 
 		var pks, uniques int
-		for _, c := range *cons {
+		for _, c := range cons {
 			switch c.ConstraintType {
 			case "PRIMARY KEY":
 				pks++
@@ -124,10 +124,10 @@ func TestPostQuerier(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ForeignKeys: %v", err)
 		}
-		if len(*fks) != 1 {
-			t.Fatalf("ForeignKeys count = %d, want 1", len(*fks))
+		if len(fks) != 1 {
+			t.Fatalf("ForeignKeys count = %d, want 1", len(fks))
 		}
-		fk := (*fks)[0]
+		fk := (fks)[0]
 		if fk.TableName != "users" || fk.ColumnName != "org_id" {
 			t.Errorf("fk local side = %s.%s, want users.org_id", fk.TableName, fk.ColumnName)
 		}
@@ -170,8 +170,8 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-func columnsByKey(cols []columnRow) map[string]columnRow {
-	m := make(map[string]columnRow, len(cols))
+func columnsByKey(cols []ColumnRow) map[string]ColumnRow {
+	m := make(map[string]ColumnRow, len(cols))
 	for _, c := range cols {
 		m[c.TableName+"."+c.Name] = c
 	}
