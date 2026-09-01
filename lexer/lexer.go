@@ -15,18 +15,17 @@ type Lexer struct {
 }
 
 func New(input string) *Lexer {
-	return &Lexer{
+	l := &Lexer{
 		input: input,
-		curr:  -1,
-		read:  0,
-		ch:    input[0],
 	}
+	l.readChar()
+	return l
 
 }
 
 func (l *Lexer) NextToken() *token.Token {
 	// skips whitespace and other bullshit to give up the next actual token
-	var tok *token.Token
+	tok := &token.Token{}
 	switch l.ch {
 	case '(':
 		tok = token.NewToken(token.LPAREN, l.ch)
@@ -153,7 +152,7 @@ var m = map[string]token.TokenType{
 	"CHECK":      token.CHECK,
 	"CONSTRAINT": token.CONSTRAINT,
 	"IF":         token.IF,
-	"EXISTS":     token.EXISTS,
+	"EXIST":      token.EXIST,
 	"ON":         token.ON,
 	"CASCADE":    token.CASCADE,
 	"RESTRICT":   token.RESTRICT,

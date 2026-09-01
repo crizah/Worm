@@ -26,7 +26,7 @@ const (
 	CHECK      = "CHECK"
 	CONSTRAINT = "CONSTRAINT"
 	IF         = "IF"
-	EXISTS     = "EXISTS"
+	EXIST      = "EXIST"
 	ON         = "ON"
 	CASCADE    = "CASCADE"
 	RESTRICT   = "RESTRICT"
