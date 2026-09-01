@@ -22,6 +22,15 @@ func NewPostgresQuerier(conn string) (*PostgresQuerier, error) {
 	return p, nil
 
 }
+
+func executeSelect[T any](db *sqlx.DB, query string, schemaName string) (*[]T, error) {
+	// generics cant me methods unless struct itself is generic
+	var ans []T
+	if err := db.Select(&ans, query, schemaName); err != nil {
+		return nil, err
+	}
+	return &ans, nil
+}
 func (p *PostgresQuerier) Columns(ctx context.Context) (*[]columnRow, error) {
 	exec := `
 	SELECT table_name, column_name, ordinal_position, data_type, udt_name,
@@ -32,39 +41,13 @@ func (p *PostgresQuerier) Columns(ctx context.Context) (*[]columnRow, error) {
   ORDER BY table_name, ordinal_position;
 	`
 	// udt_name is enum name when data_type is USER DEFINED
-	ans, err := p.getColumns(exec, "public") // hardcoded for now, can change later
+	ans, err := executeSelect[columnRow](p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
 
 	return ans, nil
 
-}
-
-func (p *PostgresQuerier) getTables(query string, schemaName string) (*[]string, error) {
-	var ans []string
-	if err := p.db.Select(&ans, query, schemaName); err != nil {
-		return nil, err
-	}
-
-	return &ans, nil
-
-}
-func (p *PostgresQuerier) getColumns(query string, schemaName string) (*[]columnRow, error) {
-	var ans []columnRow
-	if err := p.db.Select(&ans, query, schemaName); err != nil {
-		return nil, err
-	}
-	return &ans, nil
-}
-
-func (p *PostgresQuerier) getConstraints(query string, schemaName string) (*[]constraintRow, error) {
-	var ans []constraintRow
-	if err := p.db.Select(&ans, query, schemaName); err != nil {
-		return nil, err
-	}
-
-	return &ans, nil
 }
 
 func (p *PostgresQuerier) Tables(ctx context.Context) (*[]string, error) {
@@ -76,7 +59,7 @@ func (p *PostgresQuerier) Tables(ctx context.Context) (*[]string, error) {
 		ORDER BY table_name;
 		`
 
-	ans, err := p.getTables(exec, "public")
+	ans, err := executeSelect[string](p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
@@ -97,22 +80,12 @@ func (p *PostgresQuerier) Constraints(cts context.Context) (*[]constraintRow, er
 
 	`
 
-	ans, err := p.getConstraints(exec, "public")
+	ans, err := executeSelect[constraintRow](p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
 
 	return ans, nil
-
-}
-
-func (p *PostgresQuerier) getFks(query string, schemaName string) (*[]fkRow, error) {
-	var ans []fkRow
-	if err := p.db.Select(&ans, query, schemaName); err != nil {
-		return nil, err
-	}
-
-	return &ans, nil
 
 }
 
@@ -131,20 +104,12 @@ func (p *PostgresQuerier) ForeignKeys(ctx context.Context) (*[]fkRow, error) {
   WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1
   ORDER BY tc.table_name, kcu.ordinal_position;
 `
-	ans, err := p.getFks(exec, "public")
+	ans, err := executeSelect[fkRow](p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
 
 	return ans, nil
-}
-
-func (p *PostgresQuerier) getEnums(query string, schemaName string) (*[]enumRow, error) {
-	var ans []enumRow
-	if err := p.db.Select(&ans, query, schemaName); err != nil {
-		return nil, err
-	}
-	return &ans, nil
 }
 
 func (p *PostgresQuerier) Enums(ctx context.Context) (map[string][]string, error) {
@@ -155,7 +120,7 @@ func (p *PostgresQuerier) Enums(ctx context.Context) (map[string][]string, error
  WHERE n.nspname = $1
  ORDER BY t.typname, e.enumsortorder;
 `
-	rows, err := p.getEnums(exec, "public") // hardcoded for now, matches your other methods
+	rows, err := executeSelect[enumRow](p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
@@ -166,3 +131,19 @@ func (p *PostgresQuerier) Enums(ctx context.Context) (map[string][]string, error
 	}
 	return enums, nil
 }
+
+// func Inspect(ctx context.Context, q Querier) (*schema.Schema, error) {
+// 	tables, _ := q.Tables(ctx)
+// 	cols, _ := q.Columns(ctx)
+// 	cons, _ := q.Constraints(ctx)
+// 	fks, _ := q.ForeignKeys(ctx)
+// 	enums, _ := q.Enums(ctx)
+
+// 	byTable := groupBy(cols, func(c columnRow) string { return c.TableName })
+// 	s := &schema.Schema{}
+// 	for _, t := range tables {
+// 		table := buildTable(t, byTable[t], cons, fks, enums)
+// 		s.Tables = append(s.Tables, table)
+// 	}
+// 	return s, nil
+// }
