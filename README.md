@@ -1,3 +1,21 @@
-- right now, assuming the .sql files are ordered like 01_users.sql etc, not users.sql
-- lexigraphiclly sorting rn for migrations, and trusting the users word it
-- can use a graph for dependency via FKs later on to validate it
+- querier (queries the db to get the native schema)
+- parser (converts the normalised schems into language native schema)
+
+HLD:
+postgreql db   ---querier---> schema.Schema ------emitter----> Sqlite
+               <----emitter-               <-----querier-------
+
+once the schema migration itself is in place , for the data migration:
+- order the schema by FK constraints
+- convert column values (postgres true/false becoumes 1/0 in sqlite etc)
+- use batch processing, read n rows, maintain pagination, write those n rows
+- MAKE IT RESUMABLE, shouldnt loose data midway through (probably an sqlite table for that)
+- verification
+- locks need ot be maintained
+
+
+# done so far:
+- querier that JUST qieries the postgres connection
+
+# Next
+- parse querier struct to get schema.Schema

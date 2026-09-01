@@ -64,7 +64,8 @@ type RawExpr struct {
 }
 type MethodExpr struct {
 	// for defaults that are methods eg: "Now()", "gen_random_uuid()""
-	Val string
+	Name string // Now
+	Args []Expr // empty, but can have args
 }
 
 func (e *RawExpr) expr()    {}

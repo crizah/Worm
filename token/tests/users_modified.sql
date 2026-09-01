@@ -1,7 +1,0 @@
-CREATE TABLE IF NOT EXIST users(
-    id UUID PRIMARY KEY,
-    username VARCHAR NOT NULL UNIQUE,
-    phone_number VARCHAR
-);
-
-CREATE 

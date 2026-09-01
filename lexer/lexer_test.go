@@ -7,11 +7,14 @@ import (
 )
 
 func TestLexer(t *testing.T) {
-	input := `create TABLE IF NOT EXIST users(
+	input := `create TABLE IF NOT EXISTS users(
     id UUID PRIMARY KEY,
     username VARCHAR NOT NULL UNIQUE,
     role VARCHAR DEFAULT 'admin',
-    score INT DEFAULT 100
+    score INT DEFAULT 100,
+    meow_kitty INT DEFAULT 100,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT FALSE
 	);`
 
 	tests := []struct {
@@ -22,7 +25,7 @@ func TestLexer(t *testing.T) {
 		{token.TABLE, "TABLE"},
 		{token.IF, "IF"},
 		{token.NOT, "NOT"},
-		{token.EXIST, "EXIST"},
+		{token.EXISTS, "EXISTS"},
 		{token.IDENT, "users"},
 		{token.LPAREN, "("},
 		{token.IDENT, "id"},
@@ -45,6 +48,23 @@ func TestLexer(t *testing.T) {
 		{token.IDENT, "INT"},
 		{token.DEFAULT, "DEFAULT"},
 		{token.INT, "100"},
+		{token.COMMA, ","},
+		{token.IDENT, "meow_kitty"},
+		{token.IDENT, "INT"},
+		{token.DEFAULT, "DEFAULT"},
+		{token.INT, "100"},
+		{token.COMMA, ","},
+		{token.IDENT, "created_at"},
+		{token.IDENT, "TIMESTAMPTZ"},
+		{token.DEFAULT, "DEFAULT"},
+		{token.IDENT, "NOW"},
+		{token.LPAREN, "("},
+		{token.RPAREN, ")"},
+		{token.COMMA, ","},
+		{token.IDENT, "is_active"},
+		{token.IDENT, "BOOLEAN"},
+		{token.DEFAULT, "DEFAULT"},
+		{token.FALSE, "FALSE"},
 		{token.RPAREN, ")"},
 		{token.SEMICOLON, ";"},
 		{token.EOF, ""},

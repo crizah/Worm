@@ -18,7 +18,7 @@ const (
 	PRIMARY    = "PRIMARY"
 	KEY        = "KEY"
 	FOREIGN    = "FOREIGN"
-	REFERENCES = "REFERENCE"
+	REFERENCES = "REFERENCES"
 	NOT        = "NOT"
 	NULL       = "NULL"
 	DEFAULT    = "DEFAULT"
@@ -26,10 +26,12 @@ const (
 	CHECK      = "CHECK"
 	CONSTRAINT = "CONSTRAINT"
 	IF         = "IF"
-	EXIST      = "EXIST"
+	EXISTS     = "EXISTS"
 	ON         = "ON"
 	CASCADE    = "CASCADE"
 	RESTRICT   = "RESTRICT"
+	TRUE       = "TRUE"
+	FALSE      = "FALSE"
 
 	// symbols
 	LPAREN    = "("

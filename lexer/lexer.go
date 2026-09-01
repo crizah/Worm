@@ -122,7 +122,15 @@ func (l *Lexer) readIdentifier() string {
 
 	}
 
-	// if its not a whitespace, weird syntax, could be number but return error i think
+	if isNumber(l.ch) {
+		for isNumber(l.ch) {
+			s += string(l.ch)
+			l.readChar()
+		}
+		return s
+
+	}
+
 	return s
 
 }
@@ -131,7 +139,7 @@ func isWhitespace(ch byte) bool {
 }
 
 func isLetter(ch byte) bool {
-	return ('a' <= ch && ch <= 'z') || ('A' <= ch && ch <= 'Z')
+	return ('a' <= ch && ch <= 'z') || ('A' <= ch && ch <= 'Z') || (ch == '_')
 }
 
 var m = map[string]token.TokenType{
@@ -144,7 +152,7 @@ var m = map[string]token.TokenType{
 	"PRIMARY":    token.PRIMARY,
 	"KEY":        token.KEY,
 	"FOREIGN":    token.FOREIGN,
-	"REFERENCE":  token.REFERENCES,
+	"REFERENCES": token.REFERENCES,
 	"NOT":        token.NOT,
 	"NULL":       token.NULL,
 	"DEFAULT":    token.DEFAULT,
@@ -152,10 +160,12 @@ var m = map[string]token.TokenType{
 	"CHECK":      token.CHECK,
 	"CONSTRAINT": token.CONSTRAINT,
 	"IF":         token.IF,
-	"EXIST":      token.EXIST,
+	"EXISTS":     token.EXISTS,
 	"ON":         token.ON,
 	"CASCADE":    token.CASCADE,
 	"RESTRICT":   token.RESTRICT,
+	"TRUE":       token.TRUE,
+	"FALSE":      token.FALSE,
 }
 
 func (l *Lexer) getType(lit string) token.TokenType {

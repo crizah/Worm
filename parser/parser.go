@@ -1,14 +1,14 @@
 package parser
 
 // parses the sql file and returns a schema object
-type Parser struct {
-	schemaDir *Dir
-}
+// type Parser struct {
+// 	schemaDir *Dir
+// }
 
-type Dir struct {
-	dirPath   string
-	filePaths *[]string // sorted
-}
+// type Dir struct {
+// 	dirPath   string
+// 	filePaths *[]string // sorted
+// }
 
 // func New(dirPath string) (*Parser, error) {
 // 	info, err := os.Stat(dirPath)
