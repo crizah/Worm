@@ -4,13 +4,13 @@ package schema
 
 type Schema struct {
 	DbName string
-	Tables []Table
+	Tables []*Table
 }
 type Table struct {
 	Name    string
 	Columns []Column
 	PK      *Index
-	FKs     []ForeignKey
+	FKs     []*ForeignKey
 	Indexes []*Index
 }
 

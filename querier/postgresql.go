@@ -53,7 +53,7 @@ func (p *PostgresQuerier) Indexes(ctx context.Context) ([]IndexRow, error) {
       ON true
   JOIN pg_attribute a
       ON a.attrelid = i.indrelid AND a.attnum = ord.attnum
-  WHERE n.nspname = $1 and i.indisprimary = false
+  WHERE n.nspname = $1
   ORDER BY tc.relname, ic.relname, ord.ordpos;
 	`
 	ans, err := executeSelect[IndexRow](p.db, exec, "public")
@@ -124,18 +124,27 @@ func (p *PostgresQuerier) Constraints(cts context.Context) ([]ConstraintRow, err
 
 func (p *PostgresQuerier) ForeignKeys(ctx context.Context) ([]FkRow, error) {
 	exec := `
- SELECT tc.table_name, kcu.column_name, tc.constraint_name,
-         ccu.table_name AS ref_table_name, ccu.column_name AS ref_column_name,
-         rc.update_rule, rc.delete_rule
+	SELECT
+      tc.table_name,
+      kcu.column_name,
+      tc.constraint_name,
+      kcu2.table_name  AS ref_table_name,
+      kcu2.column_name AS ref_column_name,
+      rc.update_rule,
+      rc.delete_rule,
+      kcu.ordinal_position
   FROM information_schema.table_constraints tc
   JOIN information_schema.key_column_usage kcu
-    ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
   JOIN information_schema.referential_constraints rc
-    ON tc.constraint_name = rc.constraint_name AND tc.table_schema = rc.constraint_schema
-  JOIN information_schema.constraint_column_usage ccu
-    ON rc.unique_constraint_name = ccu.constraint_name AND rc.unique_constraint_schema = ccu.constraint_schema
+      ON tc.constraint_name = rc.constraint_name AND tc.table_schema = rc.constraint_schema
+  JOIN information_schema.key_column_usage kcu2
+      ON kcu2.constraint_name = rc.unique_constraint_name
+     AND kcu2.constraint_schema = rc.unique_constraint_schema
+     AND kcu2.position_in_unique_constraint = kcu.ordinal_position
   WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1
-  ORDER BY tc.table_name, kcu.ordinal_position;
+  ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position;
+
 `
 	ans, err := executeSelect[FkRow](p.db, exec, "public") // hardcoded for now
 	if err != nil {

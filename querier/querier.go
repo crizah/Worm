@@ -42,6 +42,7 @@ type EnumRow struct {
 type FkRow struct {
 	TableName      string `db:"table_name"`
 	ColumnName     string `db:"column_name"`
+	Ordinal        int    `db:"ordinal_position"`
 	ConstraintName string `db:"constraint_name"`
 	RefTableName   string `db:"ref_table_name"`
 	RefColumnName  string `db:"ref_column_name"`
