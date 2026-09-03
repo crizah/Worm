@@ -19,3 +19,10 @@ once the schema migration itself is in place , for the data migration:
 
 # Next
 - parse querier struct to get schema.Schema
+
+- Remove the PK from column level and constraint to just index level
+- build that godamn indexName -> []column mapping
+
+
+# trade off
+- not supporting indexes on functions like lower(email) etc, if they are a part of a composite index, that index will be rebuilt without it (wrong, but out of scope for now)

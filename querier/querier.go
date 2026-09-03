@@ -10,6 +10,7 @@ type Querier interface {
 	Constraints(ctx context.Context) ([]ConstraintRow, error)
 	ForeignKeys(ctx context.Context) ([]FkRow, error)
 	Enums(ctx context.Context) (map[string][]string, error) // maps enum name to values
+	Indexes(ctx context.Context) ([]IndexRow, error)
 }
 
 type ConstraintRow struct {
@@ -18,6 +19,18 @@ type ConstraintRow struct {
 	ConstraintType string `db:"constraint_type"`
 	ColumnName     string `db:"column_name"`
 	Ordinal        int    `db:"ordinal_position"`
+}
+
+type IndexRow struct {
+	Name             string  `db:"index_name"`
+	TableName        string  `db:"table_name"`
+	IsUnique         bool    `db:"is_unique"`
+	IsPartial        bool    `db:"is_partial"`
+	IsPrimaryKey     bool    `db:"is_primary_key"`
+	PartialPredicate *string `db:"partial_predicate"`
+	IndexType        string  `db:"index_type"`
+	ColumnName       string  `db:"column_name"`
+	Ordinal          int     `db:"ordinal_position"`
 }
 
 type EnumRow struct {

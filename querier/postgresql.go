@@ -31,6 +31,38 @@ func executeSelect[T any](db *sqlx.DB, query string, schemaName string) ([]T, er
 	}
 	return ans, nil
 }
+func (p *PostgresQuerier) Indexes(ctx context.Context) ([]IndexRow, error) {
+	// we skip the primary keys here because they are already scooped up by constraints
+	exec := `
+	SELECT
+      ic.relname                              AS index_name,
+      tc.relname                              AS table_name,
+      i.indisunique                           AS is_unique,
+      i.indisprimary                          AS is_primary,
+      (i.indpred IS NOT NULL)                 AS is_partial,
+      pg_get_expr(i.indpred, i.indrelid)      AS partial_predicate,
+      am.amname                               AS index_type,
+      a.attname                               AS column_name,
+      ord.ordpos                              AS ordinal_position
+  FROM pg_index i
+  JOIN pg_class ic  ON ic.oid = i.indexrelid
+  JOIN pg_class tc  ON tc.oid = i.indrelid
+  JOIN pg_namespace n ON n.oid = tc.relnamespace
+  JOIN pg_am am     ON am.oid = ic.relam
+  JOIN LATERAL unnest(i.indkey::int2[]) WITH ORDINALITY AS ord(attnum, ordpos)
+      ON true
+  JOIN pg_attribute a
+      ON a.attrelid = i.indrelid AND a.attnum = ord.attnum
+  WHERE n.nspname = $1 and i.indisprimary = false
+  ORDER BY tc.relname, ic.relname, ord.ordpos;
+	`
+	ans, err := executeSelect[IndexRow](p.db, exec, "public")
+	if err != nil {
+		return nil, err
+	}
+	return ans, nil
+
+}
 func (p *PostgresQuerier) Columns(ctx context.Context) ([]ColumnRow, error) {
 	exec := `
 	SELECT table_name, column_name, ordinal_position, data_type, udt_name,

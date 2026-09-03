@@ -9,7 +9,7 @@ type Schema struct {
 type Table struct {
 	Name    string
 	Columns []Column
-	PK      Index
+	PK      *Index
 	FKs     []ForeignKey
 	Indexes []*Index
 }
@@ -20,15 +20,13 @@ type Column struct {
 	IsNullable bool // if column is not null
 	IsPK       bool // if column is pk
 	Default    Expr
-	FKs        []ForeignKey
 }
 
 // Index
 type Index struct {
 	Name    string
-	Table   *Table
 	Columns []Column
-	isPK    bool
+	IsPK    bool
 }
 
 // PKs
@@ -38,6 +36,7 @@ type Index struct {
 type ForeignKey struct {
 	RefTable   *Table
 	RefColumns []*Column
+	Columns    []*Column
 
 	OnUpdate ReferenceOption
 	OnDelete ReferenceOption
