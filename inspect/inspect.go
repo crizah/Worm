@@ -14,8 +14,13 @@ type Inspector interface {
 }
 
 func buildIndexes(ind []querier.IndexRow, cols []schema.Column) ([]*schema.Index, *schema.Index) {
+	// Note: both ind and cols are already table specific
+
 	// group IndexName -> []schema.Columns
 	indexMap := make(map[string][]schema.Column)
+	// maps if this index is unqiue or not via index name
+	isUnique := make(map[string]bool)
+
 	var pk string
 	for _, i := range ind {
 		// per index name, group the columns
@@ -23,22 +28,24 @@ func buildIndexes(ind []querier.IndexRow, cols []schema.Column) ([]*schema.Index
 		if i.IsPrimaryKey {
 			pk = i.Name
 		}
+		isUnique[i.Name] = i.IsUnique
 		for _, cname := range cols {
 			if cname.Name == i.ColumnName {
 				groupedColumn = append(groupedColumn, cname)
 			}
 		}
-		indexMap[i.Name] = groupedColumn
+		indexMap[i.Name] = append(indexMap[i.Name], groupedColumn...) // multi column indexes
 
 	}
 
 	var ans []*schema.Index
 	var Pk *schema.Index
-	for _, i := range ind {
+	for name, columns := range indexMap { // iterate the map to avoid duplicates
 		index := &schema.Index{
-			Name:    i.Name,
-			Columns: indexMap[i.Name],
-			IsPK:    pk == i.Name,
+			Name:     name,
+			Columns:  columns,
+			IsPK:     pk == name,
+			IsUnique: isUnique[name],
 		}
 		if index.IsPK {
 			Pk = index
@@ -62,7 +69,7 @@ func groupBy[T any](items []T, getKey func(T) string) map[string][]T {
 
 }
 
-func buildColumns(tableName string, cols []querier.ColumnRow, enums map[string][]string, con []querier.ConstraintRow, columnMap map[string]*schema.Column) []schema.Column {
+func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []querier.ConstraintRow, columnMap map[string]*schema.Column) []schema.Column {
 	pk := make(map[string]int) // 1 means PK, 2 means unique
 	for _, c := range con {
 		switch c.ConstraintType {

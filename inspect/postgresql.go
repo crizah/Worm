@@ -89,14 +89,14 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 	tableMap := make(map[string]*schema.Table)
 	columnMap := make(map[string]*schema.Column) // maps tableName.columnName
 	for _, t := range tables {
-		columns := buildColumns(t, groupedCols[t], enums, groupedCons[t], columnMap)
+		columns := buildColumns(groupedCols[t], enums, groupedCons[t], columnMap)
 		indexes, pk := buildIndexes(groupedIndexes[t], columns)
 
 		table := schema.Table{
 			Name:    t,
-			Columns: columns, // TODO: doesnt have fk yet and unique constraint (remove fk from column level to only table level)
-			PK:      pk,
+			Columns: columns,
 			Indexes: indexes,
+			PK:      pk,
 		}
 		tableMap[table.Name] = &table
 

@@ -24,9 +24,10 @@ type Column struct {
 
 // Index
 type Index struct {
-	Name    string
-	Columns []Column
-	IsPK    bool
+	Name     string
+	Columns  []Column
+	IsPK     bool
+	IsUnique bool
 }
 
 // PKs

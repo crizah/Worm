@@ -16,12 +16,11 @@ once the schema migration itself is in place , for the data migration:
 
 # done so far:
 - querier that JUST qieries the postgres connection
+- initial version of postgres inspector (untested)
 
 # Next
-- parse querier struct to get schema.Schema
-
-- Remove the PK from column level and constraint to just index level
-- build that godamn indexName -> []column mapping
+- test the postgres inspector
+- work on opposite version next (schema -> postgres)
 
 
 # trade off
