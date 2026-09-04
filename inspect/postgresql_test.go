@@ -13,6 +13,9 @@ import (
 
 var testData *schema.Schema
 
+// all this data is global right now, cant run on a diff test suite
+var tableVisited = make(map[string]struct{}) // maps if this table is already visited by either testTable or testFks
+
 func TestPInspect(t *testing.T) {
 	godotenv.Load()
 	conn := os.Getenv("DB_CONN")
@@ -137,12 +140,73 @@ func testIndexes(t *testing.T, e *schema.Index, g *schema.Index) bool {
 }
 
 func testFks(t *testing.T, e *schema.ForeignKey, g *schema.ForeignKey) bool {
-	// TODO: make this function
-	// if i call check table isndie here, is it going to be an infinite loop lol?
-	return false
+	// ref columns
+	expected := e.RefColumns
+	got := g.RefColumns
+
+	colMap := checkStuff(t, expected, got, func(c *schema.Column) string {
+		return c.Name
+	})
+	if colMap == nil {
+		return false
+	}
+
+	for ee, gg := range colMap {
+		if !testColumns(t, ee, gg) {
+			t.Errorf("Error in Column %s", ee.Name)
+			return false
+		}
+
+	}
+	// columns
+	expected = e.Columns
+	got = g.Columns
+
+	colMap = checkStuff(t, expected, got, func(c *schema.Column) string {
+		return c.Name
+	})
+	if colMap == nil {
+		return false
+	}
+
+	for ee, gg := range colMap {
+		if !testColumns(t, ee, gg) {
+			t.Errorf("Error in Column %s", ee.Name)
+			return false
+		}
+
+	}
+
+	// references
+	if e.OnUpdate != g.OnUpdate {
+		t.Errorf("Error onUpdate expected %s, got %s", e.OnUpdate, g.OnUpdate)
+		return false
+	}
+
+	if e.OnDelete != g.OnDelete {
+		t.Errorf("Error onDelete expected %s, got %s", e.OnDelete, g.OnDelete)
+		return false
+	}
+
+	// ref tables
+
+	if e.RefTable != nil && g.RefTable != nil {
+		if !testTables(t, e.RefTable, g.RefTable) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func testTables(t *testing.T, e *schema.Table, g *schema.Table) bool {
+	_, ok := tableVisited[e.Name]
+	if ok {
+		// must be true right if the cycle is continuing?
+		return true
+	}
+	// we wont have a circular dependency, so i think this should work with just a visited array
+	tableVisited[e.Name] = struct{}{} // mark visited
 
 	expected := e.Columns
 	got := g.Columns
