@@ -32,7 +32,7 @@ func executeSelect[T any](db *sqlx.DB, query string, schemaName string) ([]T, er
 	return ans, nil
 }
 func (p *PostgresQuerier) Indexes(ctx context.Context) ([]IndexRow, error) {
-	// we skip the primary keys here because they are already scooped up by constraints
+
 	exec := `
 	SELECT
       ic.relname                              AS index_name,
@@ -99,6 +99,14 @@ func (p *PostgresQuerier) Tables(ctx context.Context) ([]string, error) {
 	return ans, nil
 
 }
+func (p *PostgresQuerier) DbName(ctx context.Context) (string, error) {
+	exec := "SELECT catalog_name as db_name from information_schema.information_schema_catalog_name"
+	var ans string
+	if err := p.db.Select(&ans, exec); err != nil {
+		return "", err
+	}
+	return ans, nil
+}
 
 func (p *PostgresQuerier) Constraints(cts context.Context) ([]ConstraintRow, error) {
 	exec := `
@@ -127,7 +135,7 @@ func (p *PostgresQuerier) ForeignKeys(ctx context.Context) ([]FkRow, error) {
 	SELECT
       tc.table_name,
       kcu.column_name,
-      tc.constraint_name,
+      tc.constraint_name AS fk_name,
       kcu2.table_name  AS ref_table_name,
       kcu2.column_name AS ref_column_name,
       rc.update_rule,
@@ -144,7 +152,6 @@ func (p *PostgresQuerier) ForeignKeys(ctx context.Context) ([]FkRow, error) {
      AND kcu2.position_in_unique_constraint = kcu.ordinal_position
   WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1
   ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position;
-
 `
 	ans, err := executeSelect[FkRow](p.db, exec, "public") // hardcoded for now
 	if err != nil {

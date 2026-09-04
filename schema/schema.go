@@ -1,6 +1,6 @@
 package schema
 
-// defines the go structs we compare againts on a diff
+// defines the universal go structs that each query maps to
 
 type Schema struct {
 	DbName string
@@ -8,7 +8,7 @@ type Schema struct {
 }
 type Table struct {
 	Name    string
-	Columns []Column
+	Columns []*Column
 	PK      *Index
 	FKs     []*ForeignKey
 	Indexes []*Index
@@ -17,24 +17,20 @@ type Table struct {
 type Column struct {
 	Name       string
 	Type       Type
-	IsNullable bool // if column is not null
-	IsPK       bool // if column is pk
+	IsNullable bool
+	IsPK       bool
 	Default    Expr
 }
 
-// Index
 type Index struct {
 	Name     string
-	Columns  []Column
+	Columns  []*Column
 	IsPK     bool
 	IsUnique bool
 }
 
-// PKs
-
-// FKs
-
 type ForeignKey struct {
+	Name       string
 	RefTable   *Table
 	RefColumns []*Column
 	Columns    []*Column
@@ -67,7 +63,7 @@ type RawExpr struct {
 
 type MethodExpr struct {
 	// for defaults that are methods eg: "now()", "gen_random_uuid()""
-	Name string // Now
+	Name string // now
 	Args []Expr // empty, but can have args
 }
 

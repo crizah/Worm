@@ -11,6 +11,7 @@ type Querier interface {
 	ForeignKeys(ctx context.Context) ([]FkRow, error)
 	Enums(ctx context.Context) (map[string][]string, error) // maps enum name to values
 	Indexes(ctx context.Context) ([]IndexRow, error)
+	DbName(ctx context.Context) (string, error)
 }
 
 type ConstraintRow struct {
@@ -40,6 +41,7 @@ type EnumRow struct {
 }
 
 type FkRow struct {
+	Name           string `db:"fk_name"`
 	TableName      string `db:"table_name"`
 	ColumnName     string `db:"column_name"`
 	Ordinal        int    `db:"ordinal_position"`

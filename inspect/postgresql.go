@@ -10,10 +10,10 @@ import (
 )
 
 type PInspector struct {
-	q querier.PostgresQuerier
+	q *querier.PostgresQuerier
 }
 
-func NewPInspector(q querier.PostgresQuerier) *PInspector {
+func NewPInspector(q *querier.PostgresQuerier) *PInspector {
 	return &PInspector{
 		q: q,
 	}
@@ -29,6 +29,7 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 	var fks []querier.FkRow
 	var enums map[string][]string
 	var indexes []querier.IndexRow
+	var dbName string
 
 	g, gCtx := errgroup.WithContext(ctx) // if one fails, all fail
 
@@ -36,6 +37,12 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 
 		var err error
 		tables, err = p.q.Tables(gCtx)
+		return err
+	})
+
+	g.Go(func() error {
+		var err error
+		dbName, err = p.q.DbName(ctx)
 		return err
 	})
 
@@ -85,7 +92,7 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 		return c.TableName
 	})
 
-	s := &schema.Schema{}
+	s := &schema.Schema{DbName: dbName}
 	tableMap := make(map[string]*schema.Table)
 	columnMap := make(map[string]*schema.Column) // maps tableName.columnName
 	for _, t := range tables {
@@ -128,6 +135,7 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 
 func (p *PInspector) buildFk(fk querier.FkRow, refTable *schema.Table) *schema.ForeignKey {
 	return &schema.ForeignKey{
+		Name:     fk.Name,
 		RefTable: refTable,
 		OnUpdate: schema.ReferenceOption(fk.UpdateRule), // map cleanly, only for postgres, for sql we need a map
 		// thats why this is a method

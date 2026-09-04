@@ -13,18 +13,18 @@ type Inspector interface {
 	buildFk(fk querier.FkRow, refTable *schema.Table) *schema.ForeignKey
 }
 
-func buildIndexes(ind []querier.IndexRow, cols []schema.Column) ([]*schema.Index, *schema.Index) {
+func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Index, *schema.Index) {
 	// Note: both ind and cols are already table specific
 
 	// group IndexName -> []schema.Columns
-	indexMap := make(map[string][]schema.Column)
+	indexMap := make(map[string][]*schema.Column)
 	// maps if this index is unqiue or not via index name
 	isUnique := make(map[string]bool)
 
 	var pk string
 	for _, i := range ind {
 		// per index name, group the columns
-		var groupedColumn []schema.Column
+		var groupedColumn []*schema.Column
 		if i.IsPrimaryKey {
 			pk = i.Name
 		}
@@ -69,7 +69,7 @@ func groupBy[T any](items []T, getKey func(T) string) map[string][]T {
 
 }
 
-func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []querier.ConstraintRow, columnMap map[string]*schema.Column) []schema.Column {
+func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []querier.ConstraintRow, columnMap map[string]*schema.Column) []*schema.Column {
 	pk := make(map[string]int) // 1 means PK, 2 means unique
 	for _, c := range con {
 		switch c.ConstraintType {
@@ -82,7 +82,7 @@ func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []que
 			pk[c.ColumnName] = 0
 		}
 	}
-	var ans []schema.Column
+	var ans []*schema.Column
 	for _, c := range cols {
 		col := schema.Column{Name: c.Name}
 		col.IsNullable = c.IsNullable != "NO"
@@ -99,7 +99,7 @@ func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []que
 		col.Default = buildDefaultExp(t, c.DefaultExpr)
 		columnMap[c.TableName+"."+col.Name] = &col
 
-		ans = append(ans, col)
+		ans = append(ans, &col)
 	}
 	return ans
 }
