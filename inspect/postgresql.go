@@ -140,3 +140,17 @@ func (p *PInspector) buildFk(fk querier.FkRow, refTable *schema.Table) *schema.F
 	}
 
 }
+
+var postmap = map[string]schema.Type{
+	"uuid":                        schema.UUIDType{},
+	"boolean":                     schema.BoolType{},
+	"text":                        schema.TextType{},
+	"bigint":                      schema.IntegerType{},
+	"integer":                     schema.IntegerType{},
+	"date":                        schema.TimeType{},
+	"timestamp with time zone":    schema.TimeType{},
+	"timestamp without time zone": schema.TimeType{},
+	"jsonb":                       schema.JSONType{},
+	"json":                        schema.JSONType{},
+	"USER-DEFINED":                schema.EnumType{},
+}

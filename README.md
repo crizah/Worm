@@ -16,11 +16,11 @@ once the schema migration itself is in place , for the data migration:
 
 # done so far:
 - querier that JUST qieries the postgres connection
-- initial version of postgres inspector (untested)
+- inspector for postgres->schema
 
 # Next
-- test the postgres inspector
-- work on opposite version next (schema -> postgres)
+- schema -> sqlite
+- sqlite schema migrater (needs to be in order of fks)
 
 
 # trade off
