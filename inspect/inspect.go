@@ -34,7 +34,7 @@ func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Inde
 				groupedColumn = append(groupedColumn, cname)
 			}
 		}
-		indexMap[i.Name] = append(indexMap[i.Name], groupedColumn...) // multi column indexes
+		indexMap[i.Name] = append(indexMap[i.Name], groupedColumn...) // multi column indexes have multiple rows
 
 	}
 
@@ -89,10 +89,12 @@ func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []que
 		col.IsPK = pk[c.Name] == 1
 
 		t, _ := postmap[c.DataType]
-		if e, isEnum := t.(schema.EnumType); isEnum {
+		e, isEnum := t.(schema.EnumType)
+		if isEnum {
 			e.Name = c.UdtName
 			e.Values = enums[e.Name]
 			t = e // must reassign
+
 		}
 		col.Type = t
 

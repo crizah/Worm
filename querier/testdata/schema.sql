@@ -1,6 +1,3 @@
-
---   docker run --rm -d --name worm-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
---   psql "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" -f querier/testdata/schema.sql
 CREATE TYPE user_role AS ENUM ('admin', 'member', 'viewer');
 
 CREATE TABLE organizations (
@@ -19,3 +16,5 @@ CREATE TABLE users (
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (org_id, email)
 );
+
+CREATE INDEX idx_users_org_id ON users(org_id);

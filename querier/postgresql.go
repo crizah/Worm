@@ -102,8 +102,8 @@ func (p *PostgresQuerier) Tables(ctx context.Context) ([]string, error) {
 func (p *PostgresQuerier) DbName(ctx context.Context) (string, error) {
 	exec := "SELECT catalog_name as db_name from information_schema.information_schema_catalog_name"
 	var ans string
-	if err := p.db.Select(&ans, exec); err != nil {
-		return "", err
+	if err := p.db.Get(&ans, exec); err != nil {
+		return "", nil
 	}
 	return ans, nil
 }
@@ -149,7 +149,7 @@ func (p *PostgresQuerier) ForeignKeys(ctx context.Context) ([]FkRow, error) {
   JOIN information_schema.key_column_usage kcu2
       ON kcu2.constraint_name = rc.unique_constraint_name
      AND kcu2.constraint_schema = rc.unique_constraint_schema
-     AND kcu2.position_in_unique_constraint = kcu.ordinal_position
+     AND kcu2.ordinal_position = kcu.position_in_unique_constraint
   WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1
   ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position;
 `

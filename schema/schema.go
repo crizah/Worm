@@ -63,7 +63,7 @@ type RawExpr struct {
 
 type MethodExpr struct {
 	// for defaults that are methods eg: "now()", "gen_random_uuid()""
-	Name string // now
+	Name string // eg: "now"
 	Args []Expr // empty, but can have args
 }
 

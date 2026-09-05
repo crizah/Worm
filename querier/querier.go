@@ -27,7 +27,7 @@ type IndexRow struct {
 	TableName        string  `db:"table_name"`
 	IsUnique         bool    `db:"is_unique"`
 	IsPartial        bool    `db:"is_partial"`
-	IsPrimaryKey     bool    `db:"is_primary_key"`
+	IsPrimaryKey     bool    `db:"is_primary"`
 	PartialPredicate *string `db:"partial_predicate"`
 	IndexType        string  `db:"index_type"`
 	ColumnName       string  `db:"column_name"`

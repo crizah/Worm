@@ -9,12 +9,85 @@ import (
 	"github.com/crizah/Worm/querier"
 	"github.com/crizah/Worm/schema"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 var testData *schema.Schema
 
 // all this data is global right now, cant run on a diff test suite
 var tableVisited = make(map[string]struct{}) // maps if this table is already visited by either testTable or testFks
+
+// expected shape of querier/testdata/schema.sql after going through the querier + inspector
+func init() {
+	orgID := &schema.Column{Name: "id", Type: schema.UUIDType{}}
+	orgName := &schema.Column{Name: "name", Type: schema.TextType{}}
+	orgDomain := &schema.Column{Name: "domain", Type: schema.TextType{}}
+	orgAttendance := &schema.Column{Name: "attendance_enabled", Type: schema.BoolType{}}
+	orgCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}}
+
+	orgPK := &schema.Index{
+		Name:     "organizations_pkey",
+		Columns:  []*schema.Column{orgID},
+		IsPK:     true,
+		IsUnique: true,
+	}
+	orgDomainUnique := &schema.Index{
+		Name:     "organizations_domain_key",
+		Columns:  []*schema.Column{orgDomain},
+		IsUnique: true,
+	}
+
+	organizations := &schema.Table{
+		Name:    "organizations",
+		Columns: []*schema.Column{orgID, orgName, orgDomain, orgAttendance, orgCreatedAt},
+		PK:      orgPK,
+		Indexes: []*schema.Index{orgPK, orgDomainUnique},
+	}
+
+	userID := &schema.Column{Name: "id", Type: schema.UUIDType{}}
+	userOrgID := &schema.Column{Name: "org_id", Type: schema.UUIDType{}}
+	userEmail := &schema.Column{Name: "email", Type: schema.TextType{}}
+	userRole := &schema.Column{Name: "role", Type: schema.EnumType{Name: "user_role", Values: []string{"admin", "member", "viewer"}}}
+	userCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}}
+
+	usersPK := &schema.Index{
+		Name:     "users_pkey",
+		Columns:  []*schema.Column{userID},
+		IsPK:     true,
+		IsUnique: true,
+	}
+	usersOrgEmailUnique := &schema.Index{
+		Name:     "users_org_id_email_key",
+		Columns:  []*schema.Column{userOrgID, userEmail},
+		IsUnique: true,
+	}
+	usersOrgIDIndex := &schema.Index{
+		Name:    "idx_users_org_id",
+		Columns: []*schema.Column{userOrgID},
+	}
+
+	users := &schema.Table{
+		Name:    "users",
+		Columns: []*schema.Column{userID, userOrgID, userEmail, userRole, userCreatedAt},
+		PK:      usersPK,
+		Indexes: []*schema.Index{usersPK, usersOrgEmailUnique, usersOrgIDIndex},
+		FKs: []*schema.ForeignKey{
+			{
+				Name:       "users_org_id_fkey",
+				RefTable:   organizations,
+				RefColumns: []*schema.Column{orgID},
+				Columns:    []*schema.Column{userOrgID},
+				OnUpdate:   schema.NoAction,
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
+
+	testData = &schema.Schema{
+		DbName: "worm_dev",
+		Tables: []*schema.Table{organizations, users},
+	}
+}
 
 func TestPInspect(t *testing.T) {
 	godotenv.Load()
@@ -28,6 +101,9 @@ func TestPInspect(t *testing.T) {
 	ctx := context.Background()
 	pi := NewPInspector(q)
 	sc, err := pi.Inspect(ctx)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
 
 	if sc.DbName != testData.DbName {
 		t.Errorf("Not the right db name, got %s", sc.DbName)
@@ -58,7 +134,8 @@ func TestPInspect(t *testing.T) {
 func checkStuff[T any](t *testing.T, a []*T, b []*T, getKey func(*T) string) map[*T]*T {
 
 	if len(a) != len(b) {
-		t.Errorf("Expected size %d got size %d", len(a), len(b))
+		var zero T
+		t.Errorf("Error in %T Expected size %d got size %d", zero, len(a), len(b))
 		// not sure of the syntax here
 		return nil
 	}
@@ -92,14 +169,11 @@ func testColumns(t *testing.T, e *schema.Column, g *schema.Column) bool {
 		return false
 	}
 
-	if e.Type != g.Type {
-		if !reflect.DeepEqual(e.Type, g.Type) {
-			// %T prints the underlying type
-			// %+v prints the struct values
-			t.Errorf("Expected Type %T(%+v) got Type %T(%+v)", e.Type, e.Type, g.Type, g.Type)
-			return false
-		}
-
+	if !reflect.DeepEqual(e.Type, g.Type) {
+		// %T prints the underlying type
+		// %+v prints the struct values
+		t.Errorf("Expected Type %T(%+v) got Type %T(%+v)", e.Type, e.Type, g.Type, g.Type)
+		return false
 	}
 	return true
 

@@ -2,7 +2,6 @@ package inspect
 
 import (
 	"context"
-	"sync"
 
 	"github.com/crizah/Worm/querier"
 	"github.com/crizah/Worm/schema"
@@ -20,8 +19,6 @@ func NewPInspector(q *querier.PostgresQuerier) *PInspector {
 }
 
 func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
-	var wg sync.WaitGroup
-	wg.Add(6)
 	// if any error out, we stop all
 	var tables []string
 	var cols []querier.ColumnRow
@@ -76,7 +73,6 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 		return err
 	})
 
-	wg.Wait()
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
@@ -118,6 +114,7 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 		sf, ok := allFks[k]
 		if !ok {
 			// if this doesnt exist yet, we need to make a new fk
+			// this is because fk row can have multiple entries because constraints span multiple columns
 			localTable := tableMap[fk.TableName]
 			refTable := tableMap[fk.RefTableName]
 
@@ -125,7 +122,7 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 			allFks[k] = sf
 			localTable.FKs = append(localTable.FKs, sf)
 		}
-		// then build the []columns and []ref columns
+		// then/else build the []columns and []ref columns
 		sf.Columns = append(sf.Columns, columnMap[fk.TableName+"."+fk.ColumnName])
 		sf.RefColumns = append(sf.RefColumns, columnMap[fk.RefTableName+"."+fk.RefColumnName])
 	}
