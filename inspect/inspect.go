@@ -87,6 +87,7 @@ func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []que
 		col := schema.Column{Name: c.Name}
 		col.IsNullable = c.IsNullable != "NO"
 		col.IsPK = pk[c.Name] == 1
+		col.IsUnique = pk[c.Name] == 2
 
 		t, _ := postmap[c.DataType]
 		e, isEnum := t.(schema.EnumType)
@@ -158,18 +159,4 @@ func buildDefaultExp(dataType schema.Type, def *string) schema.Expr {
 		Args: args,
 	}
 
-}
-
-var postmap = map[string]schema.Type{
-	"uuid":                        schema.UUIDType{},
-	"boolean":                     schema.BoolType{},
-	"text":                        schema.TextType{},
-	"bigint":                      schema.IntegerType{},
-	"integer":                     schema.IntegerType{},
-	"date":                        schema.TimeType{},
-	"timestamp with time zone":    schema.TimeType{},
-	"timestamp without time zone": schema.TimeType{},
-	"jsonb":                       schema.JSONType{},
-	"json":                        schema.JSONType{},
-	"USER-DEFINED":                schema.EnumType{},
 }

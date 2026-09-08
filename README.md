@@ -25,3 +25,20 @@ once the schema migration itself is in place , for the data migration:
 
 # trade off
 - not supporting indexes on functions like lower(email) etc, if they are a part of a composite index, that index will be rebuilt without it (wrong, but out of scope for now)
+- a lot of loss, for example sqlite does have uuid, boolean etc, and also, does have some functions like gen_random_uuid(), so is the postgres table has 
+`id UUID PRIMARY KEY DEFAULT gen_random_uuid()` 
+it will just translate to 
+`id TEXT PRIMARY KEY` and the user will have to change their code to now generate a uuid before inserting rows manually
+
+
+- reserved keywords in postgres that i havent accounted for yet (and their sqlite counterparts)
+`	"current_timestamp":       "CURRENT_TIMESTAMP",
+	"current_date":            "CURRENT_DATE",
+	"current_time":            "CURRENT_TIME",
+	"localtime":               "localtime",
+	"localtimestamp":          "localtimestamp",
+	"current_user": "NULL", // SQLite does not have users/roles
+	"session_user": "NULL",
+	"system_user":  "NULL",
+	"current_role": "NULL",
+`

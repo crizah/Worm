@@ -19,11 +19,11 @@ var tableVisited = make(map[string]struct{}) // maps if this table is already vi
 
 // expected shape of querier/testdata/schema.sql after going through the querier + inspector
 func init() {
-	orgID := &schema.Column{Name: "id", Type: schema.UUIDType{}}
+	orgID := &schema.Column{Name: "id", Type: schema.UUIDType{}, Default: &schema.MethodExpr{Name: "gen_random_uuid"}}
 	orgName := &schema.Column{Name: "name", Type: schema.TextType{}}
-	orgDomain := &schema.Column{Name: "domain", Type: schema.TextType{}}
-	orgAttendance := &schema.Column{Name: "attendance_enabled", Type: schema.BoolType{}}
-	orgCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}}
+	orgDomain := &schema.Column{Name: "domain", Type: schema.TextType{}, IsUnique: true}
+	orgAttendance := &schema.Column{Name: "attendance_enabled", Type: schema.BoolType{}, Default: &schema.RawExpr{Val: "false", ExpType: schema.BoolType{}}}
+	orgCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}, Default: &schema.MethodExpr{Name: "now"}}
 
 	orgPK := &schema.Index{
 		Name:     "organizations_pkey",
@@ -44,11 +44,12 @@ func init() {
 		Indexes: []*schema.Index{orgPK, orgDomainUnique},
 	}
 
-	userID := &schema.Column{Name: "id", Type: schema.UUIDType{}}
-	userOrgID := &schema.Column{Name: "org_id", Type: schema.UUIDType{}}
-	userEmail := &schema.Column{Name: "email", Type: schema.TextType{}}
-	userRole := &schema.Column{Name: "role", Type: schema.EnumType{Name: "user_role", Values: []string{"admin", "member", "viewer"}}}
-	userCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}}
+	userID := &schema.Column{Name: "id", Type: schema.UUIDType{}, Default: &schema.MethodExpr{Name: "gen_random_uuid"}}
+	userOrgID := &schema.Column{Name: "org_id", Type: schema.UUIDType{}, IsUnique: true}
+	userEmail := &schema.Column{Name: "email", Type: schema.TextType{}, IsUnique: true}
+	userRoleType := schema.EnumType{Name: "user_role", Values: []string{"admin", "member", "viewer"}}
+	userRole := &schema.Column{Name: "role", Type: userRoleType, Default: &schema.RawExpr{Val: "member", ExpType: userRoleType}}
+	userCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}, Default: &schema.MethodExpr{Name: "now"}}
 
 	usersPK := &schema.Index{
 		Name:     "users_pkey",
@@ -175,6 +176,28 @@ func testColumns(t *testing.T, e *schema.Column, g *schema.Column) bool {
 		t.Errorf("Expected Type %T(%+v) got Type %T(%+v)", e.Type, e.Type, g.Type, g.Type)
 		return false
 	}
+
+	if e.IsNullable != g.IsNullable {
+		t.Errorf("Expected %t", e.IsNullable)
+		return false
+	}
+
+	if e.IsPK != g.IsPK {
+		t.Errorf("Expected %t", e.IsPK)
+		return false
+	}
+
+	if e.IsUnique != g.IsUnique {
+		t.Errorf("Expected %t", e.IsUnique)
+		return false
+	}
+
+	// defaults
+	if !reflect.DeepEqual(e.Default, g.Default) {
+		t.Errorf("Expected Default %+v got %+v", e.Default, g.Default)
+		return false
+	}
+
 	return true
 
 }

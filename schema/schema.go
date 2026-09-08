@@ -19,6 +19,7 @@ type Column struct {
 	Type       Type
 	IsNullable bool
 	IsPK       bool
+	IsUnique   bool
 	Default    Expr
 }
 
