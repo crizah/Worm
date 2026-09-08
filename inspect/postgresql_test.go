@@ -14,6 +14,8 @@ import (
 
 var testData *schema.Schema
 
+// test multi column pks here
+
 // all this data is global right now, cant run on a diff test suite
 var tableVisited = make(map[string]struct{}) // maps if this table is already visited by either testTable or testFks
 

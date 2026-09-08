@@ -2,56 +2,111 @@ package emitter
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/crizah/Worm/schema"
 )
 
 type SQLiteEmitter struct {
-	Schema *schema.Schema
+	Schema  *schema.Schema
+	dirPath string
 }
 
-func NewSqlEmitter(sch *schema.Schema) *SQLiteEmitter {
+func NewSqlEmitter(sch *schema.Schema, path string) *SQLiteEmitter {
 	t := sortTables(sch.Tables)
 	sch.Tables = t
 	return &SQLiteEmitter{
-		Schema: sch,
+		Schema:  sch,
+		dirPath: path, // path to write the migration file
 	}
 }
 
-func (e *SQLiteEmitter) Emitt() {
+func (e *SQLiteEmitter) Emitt() error {
 	// writes migration files
-
+	var stmts []string
 	for _, t := range e.Schema.Tables {
-
+		stmts = append(stmts, e.buildTable(t))
 	}
+
+	// build indexes after all the tables (i think we NEED to do it this way, cos() we arent sorting based on contraints, just fk dependency)
+	for _, t := range e.Schema.Tables {
+		for _, i := range t.Indexes {
+			if i.IsPK {
+				// we already did this while building the tables itself
+				continue
+			}
+			var cols []string
+			for _, col := range i.Columns {
+				cols = append(cols, col.Name)
+			}
+
+			isUnique := ""
+			if i.IsUnique {
+				isUnique = "UNIQUE "
+			}
+
+			stmts = append(stmts, "CREATE %s INDEX %s ON %s (%s)", isUnique, i.Name, t.Name, strings.Join(cols, ","))
+		}
+	}
+
+	if err := os.MkdirAll(e.dirPath, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	fullPath := filepath.Join(e.dirPath, "migration.sql")
+
+	file, err := os.Create(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+
+	defer file.Close()
+	for _, line := range stmts {
+		if _, err := file.WriteString(line + "\n"); err != nil {
+			return fmt.Errorf("failed to write to file: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (e *SQLiteEmitter) buildTable(t *schema.Table) string {
 	// just emitt strings ig??
-	//
-	// type Table struct {
-	// 	Name    string
-	// 	Columns []*Column
-	// 	PK      *Index
-	// 	FKs     []*ForeignKey
-	// 	Indexes []*Index
-	// }
-	//
 	var cols []string
-	for i, c := range t.Columns {
+	for _, c := range t.Columns {
 
 		col := e.buildColumns(c)
-		if i != len(t.Columns)-1 {
-			// add the commas
-			col += ","
-		}
 		cols = append(cols, col)
 	}
-	// flesh out the pks and the fks anf indexes, cols just has the basic wiring right now
 
-	stmt := fmt.Sprintf("CREATE TABLE %s (%s)", t.Name, cols)
-	return ""
+	if t.PK != nil {
+		// find the columns that have the Pks
+		var pkCols []string
+		for _, col := range t.PK.Columns {
+			pkCols = append(pkCols, col.Name)
+		}
+		cols = append(cols, fmt.Sprintf(" PRIMARY KEY (%s)", strings.Join(pkCols, ", ")))
+	}
+
+	// build fks
+	for _, fk := range t.FKs {
+		var local, ref []string
+		for _, c := range fk.Columns {
+			local = append(local, c.Name)
+		}
+		for _, c := range fk.RefColumns {
+			ref = append(ref, c.Name)
+		}
+		cols = append(cols, fmt.Sprintf("  FOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE %s ON UPDATE %s",
+			strings.Join(local, ", "), fk.RefTable.Name, strings.Join(ref, ", "), fk.OnDelete, fk.OnUpdate))
+	}
+
+	// create all table and then create indexes after that
+
+	stmt := fmt.Sprintf("CREATE TABLE %s (\n%s\n);", t.Name, strings.Join(cols, ",\n"))
+	return stmt
 
 }
 
@@ -61,15 +116,6 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 	notNull := ""
 	if c.IsNullable {
 		notNull = "NOT NULL"
-	}
-	isPk := ""
-	if c.IsPK {
-		isPk = "PRIMARY KEY"
-	}
-	isUnique := ""
-	if c.IsUnique {
-		isUnique = "UNIQUE"
-
 	}
 
 	typeValue := sqliteTypeMap[c.Type]
@@ -113,8 +159,7 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 
 	}
 
-	// name, type, pk(should also have unique contraint), null constaints, defaults
-	ans := fmt.Sprintf("%s %s %s %s %s %s", c.Name, typeValue, isPk, isUnique, notNull, defaultValue)
+	ans := fmt.Sprintf("%s %s %s %s", c.Name, typeValue, notNull, defaultValue)
 	return ans
 
 }
