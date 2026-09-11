@@ -19,7 +19,7 @@ type Column struct {
 	Type       Type
 	IsNullable bool
 	IsPK       bool
-	IsUnique   bool
+	IsUnique   bool // NOTE: not used, stub
 	Default    Expr
 }
 
@@ -57,7 +57,7 @@ type Expr interface {
 
 type RawExpr struct {
 	// for defaults which are: "hello", "false", 1 , enums
-	// can be integres, boolean, enums etc, but value will always be in string
+	// can be integres, boolean, enums etc, let the values always be string tho
 	Val     string
 	ExpType Type
 }

@@ -95,7 +95,6 @@ func buildColumns(cols []querier.ColumnRow, enums map[string][]string, con []que
 			e.Name = c.UdtName
 			e.Values = enums[e.Name]
 			t = e // must reassign
-
 		}
 		col.Type = t
 
@@ -130,6 +129,22 @@ func buildDefaultExp(dataType schema.Type, def *string) schema.Expr {
 	idx := strings.IndexByte(val, '(')
 	if idx == -1 {
 		// no paranthesis, its a raw exp
+		// normalise the val if its a bool
+		if b, isBool := dataType.(schema.BoolType); isBool {
+			// NOTE: POSTGRES SPECIFIC HERE, we need to normalise the value
+			if b.Val == "true" {
+				return &schema.RawExpr{
+					Val:     "true",
+					ExpType: dataType,
+				}
+			} else {
+				return &schema.RawExpr{
+					Val:     "false",
+					ExpType: dataType,
+				}
+			}
+
+		}
 		return &schema.RawExpr{
 			Val:     val,
 			ExpType: dataType,

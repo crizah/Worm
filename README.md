@@ -17,9 +17,10 @@ once the schema migration itself is in place , for the data migration:
 # done so far:
 - querier that JUST qieries the postgres connection
 - inspector for postgres->schema
+- emitter (schema->sqlite migration file)
 
 # Next
-- schema -> sqlite
+- write sqlite specific functions for postgres functions that dont have a sqlite counterpart
 - sqlite schema migrater (needs to be in order of fks)
 
 

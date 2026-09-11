@@ -2,28 +2,28 @@ package emitter
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/crizah/Worm/schema"
 )
 
 type SQLiteEmitter struct {
-	Schema  *schema.Schema
-	dirPath string
+	Schema   *schema.Schema
+	dirPath  string
+	fileName string
 }
 
-func NewSqlEmitter(sch *schema.Schema, path string) *SQLiteEmitter {
+func NewSqlEmitter(sch *schema.Schema, path string, filename string) *SQLiteEmitter {
 	t := sortTables(sch.Tables)
 	sch.Tables = t
 	return &SQLiteEmitter{
-		Schema:  sch,
-		dirPath: path, // path to write the migration file
+		Schema:   sch,
+		dirPath:  path, // path to write the migration file
+		fileName: filename,
 	}
 }
 
-func (e *SQLiteEmitter) Emitt() error {
+func (e *SQLiteEmitter) Emitt() []string {
 	// writes migration files
 	var stmts []string
 	for _, t := range e.Schema.Tables {
@@ -47,29 +47,10 @@ func (e *SQLiteEmitter) Emitt() error {
 				isUnique = "UNIQUE "
 			}
 
-			stmts = append(stmts, "CREATE %s INDEX %s ON %s (%s)", isUnique, i.Name, t.Name, strings.Join(cols, ","))
+			stmts = append(stmts, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s);", isUnique, i.Name, t.Name, strings.Join(cols, ",")))
 		}
 	}
-
-	if err := os.MkdirAll(e.dirPath, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	fullPath := filepath.Join(e.dirPath, "migration.sql")
-
-	file, err := os.Create(fullPath)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-
-	defer file.Close()
-	for _, line := range stmts {
-		if _, err := file.WriteString(line + "\n"); err != nil {
-			return fmt.Errorf("failed to write to file: %w", err)
-		}
-	}
-
-	return nil
+	return stmts
 }
 
 func (e *SQLiteEmitter) buildTable(t *schema.Table) string {
@@ -87,7 +68,7 @@ func (e *SQLiteEmitter) buildTable(t *schema.Table) string {
 		for _, col := range t.PK.Columns {
 			pkCols = append(pkCols, col.Name)
 		}
-		cols = append(cols, fmt.Sprintf(" PRIMARY KEY (%s)", strings.Join(pkCols, ", ")))
+		cols = append(cols, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(pkCols, ", ")))
 	}
 
 	// build fks
@@ -99,7 +80,7 @@ func (e *SQLiteEmitter) buildTable(t *schema.Table) string {
 		for _, c := range fk.RefColumns {
 			ref = append(ref, c.Name)
 		}
-		cols = append(cols, fmt.Sprintf("  FOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE %s ON UPDATE %s",
+		cols = append(cols, fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE %s ON UPDATE %s",
 			strings.Join(local, ", "), fk.RefTable.Name, strings.Join(ref, ", "), fk.OnDelete, fk.OnUpdate))
 	}
 
@@ -114,11 +95,24 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 	// TODO: FK is left in here
 
 	notNull := ""
-	if c.IsNullable {
+	if !c.IsNullable {
 		notNull = "NOT NULL"
 	}
 
-	typeValue := sqliteTypeMap[c.Type]
+	var typeValue string
+	// enum type is unhashable becaiuse of slice
+	if _, isEnum := c.Type.(schema.EnumType); isEnum {
+		typeValue = "TEXT"
+	} else {
+		typeValue = sqliteTypeMap[c.Type]
+	}
+
+	// check if the column was boolean type, we need to map false->1 and true-> 0 in defaults if it has one
+	isBool := false
+	if _, isb := c.Type.(schema.BoolType); isb {
+		isBool = true
+
+	}
 
 	defaultValue := ""
 	if r, ok := c.Default.(*schema.RawExpr); ok {
@@ -133,14 +127,27 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 			for i, v := range en.Values {
 				quoted[i] = "'" + v + "'"
 			}
-			currValue := "'" + en.Name + "'"
-			defaultValue = fmt.Sprintf(" DEFAULT %s CHECK(%s IN (%s))", currValue, c.Name, strings.Join(quoted, ", "))
-		}
-
-		if typeValue == "INTEGER" {
-			defaultValue = "DEFAULT" + r.Val
+			currValue := "'" + r.Val + "'"
+			defaultValue = fmt.Sprintf("DEFAULT %s CHECK(%s IN (%s))", currValue, c.Name, strings.Join(quoted, ", "))
 		} else {
-			defaultValue = "DEFAULT '" + r.Val + "'"
+			// over here, check if the integer type was actually boolean in postgres, and emit 1 or 0 according to that in defaults
+			if typeValue == "INTEGER" {
+				if isBool {
+					if r.Val == "true" {
+						defaultValue = "DEFAULT 1"
+					} else {
+						defaultValue = "DEFAULT 0"
+					}
+				} else {
+					// normal integer, without quotes
+					defaultValue = "DEFAULT " + r.Val
+				}
+
+			} else {
+				// TEXT type with quotes
+				defaultValue = "DEFAULT '" + r.Val + "'"
+			}
+
 		}
 
 	}
@@ -153,74 +160,15 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 			// we dont have an equivelent default for this
 			// log it
 			// TODO: LOG THIS SOMEWHERE
+			// TODO: BUILD DEFAULT METHOD FOR THE SPECIFIC GUY HERE
+			defaultValue = "DEFAULT NUHHUH"
 		} else {
-			defaultValue = "DEFAULT" + method
+			defaultValue = "DEFAULT " + method
 		}
 
 	}
 
 	ans := fmt.Sprintf("%s %s %s %s", c.Name, typeValue, notNull, defaultValue)
-	return ans
-
-}
-
-func sortTables(tables []*schema.Table) []*schema.Table {
-	// build adj map, i.e for every table, what tables depend on it
-	// build incoming arr, i.e for every table, how many tables depend on this guy
-	// sort arr, add to queue all that have 0 and remove dependency one by one, if the dependency for any guy becoumes 0
-	// add to ans
-	// cyclic guys will be all thats left, add them as is
-
-	// TODO: since multiple fks in the same table can ref to the same refTable, handle that, but i think it should be fine
-	var ans []*schema.Table
-	adjMap := make(map[*schema.Table][]*schema.Table)
-	incoming := make(map[*schema.Table]int) // a map is way better i dont think a vector will work
-
-	for _, t := range tables {
-		incoming[t] = 0
-	}
-
-	for _, t := range tables {
-		for _, fk := range t.FKs {
-			incoming[t]++
-			adjMap[fk.RefTable] = append(adjMap[fk.RefTable], t)
-		}
-	}
-
-	var q []*schema.Table
-	for _, t := range tables {
-		if incoming[t] == 0 {
-			q = append(q, t)
-		}
-	}
-
-	for !(len(q) == 0) {
-		t := q[0] // front
-		q = q[1:] // pop
-		ans = append(ans, t)
-
-		// for all the guys that this giuy references
-		for _, n := range adjMap[t] {
-			incoming[n]--
-
-			if incoming[n] == 0 {
-				// no more outgoing, add to queue
-				q = append(q, n)
-			}
-		}
-
-	}
-
-	// only guys left will be cyclic guys, append them as is
-	if len(ans) != len(tables) {
-		for _, t := range tables {
-			if incoming[t] > 0 {
-				ans = append(ans, t)
-			}
-		}
-
-	}
-
 	return ans
 
 }
@@ -235,7 +183,6 @@ var sqliteTypeMap = map[schema.Type]string{
 	schema.TextType{}: "TEXT",
 	schema.TimeType{}: "TEXT",
 	schema.JSONType{}: "TEXT",
-	schema.EnumType{}: "TEXT",
 }
 
 // should do mapping on the default functions we have from schema to sqlite
