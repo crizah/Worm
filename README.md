@@ -43,3 +43,7 @@ it will just translate to
 	"system_user":  "NULL",
 	"current_role": "NULL",
 `
+
+# scope for later
+right now, the migrater is purely a one time thing. i.e, it will wipe your db, run the schema migrationa nd transfer all you data
+later on, we can make this guy track state, the target connection doesnt need to be wiped, track its state and only migrate the diff, like alembic, but thats scope for later (never)
