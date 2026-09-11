@@ -15,6 +15,7 @@ type Emitter interface {
 }
 
 func writeFile(d string, f string, stmts []string) error {
+	// add this into Emitter, this is out rn only for testing purpouses
 	dir := "./"
 	if d != "" {
 		dir = d

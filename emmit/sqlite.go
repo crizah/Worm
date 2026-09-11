@@ -92,6 +92,7 @@ func (e *SQLiteEmitter) Emitt() []string {
 			stmts = append(stmts, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s) %s;", isUnique, i.Name, t.Name, strings.Join(cols, ","), isPartial))
 		}
 	}
+	writeFile(e.dirPath, e.fileName, stmts)
 	return stmts
 }
 

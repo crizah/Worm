@@ -18,18 +18,13 @@ once the schema migration itself is in place , for the data migration:
 - querier that JUST qieries the postgres connection
 - inspector for postgres->schema
 - emitter (schema->sqlite migration file)
+- schema migrator
 
 # working on:
-supporting
-- partial indexes/ones with where clause eg: 
-`CREATE INDEX idx_scores_team_leaderboard ON employee_scores(team_id, user_id, points_awarded) WHERE superseded = false;`
-
-
-
 
 # Next
-- write sqlite specific functions for postgres functions that dont have a sqlite counterpart
-- sqlite schema migrater (needs to be in order of fks)
+- start on the actual data migration part 
+
 
 # missed/gaps:
 - certain postgres types
@@ -58,6 +53,9 @@ the querier already has the right fields, the inspecter and the emitter need it
 - for certain indexes with predicates, only supporting = predicates right now, not >=, <= etc, (also include eg like LIKE, IN(), NOT IN() etc)
 
 
+
 # scope for later
 right now, the migrater is purely a one time thing. i.e, it will wipe your db, run the schema migrationa nd transfer all you data
 later on, we can make this guy track state, the target connection doesnt need to be wiped, track its state and only migrate the diff, like alembic, but thats scope for later (never)
+
+- write sqlite specific functions for postgres functions that dont have a sqlite counterpart
