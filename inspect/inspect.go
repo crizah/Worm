@@ -47,9 +47,10 @@ func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Inde
 				// each side of AND is one predicate (could also be OR)
 				s := *i.PartialPredicate
 				parts := predicateSplitRe.Split(s, -1)
+				joiners := predicateSplitRe.FindAllString(s, -1) // gets the "AND", "OR" in order
 
 				var pred []*schema.Predicate
-				for _, p := range parts {
+				for i, p := range parts {
 					//  this is in the format columnName = 'VALUE'::<enum_name>, (if enum type)
 					// or columnName = <value> if non enum type
 					//
@@ -64,10 +65,26 @@ func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Inde
 					pp := strings.Split(p, "=")         // NOTE: hardcoding = operator here, can support more later on
 					cName := strings.Trim(pp[0], " ()") // remove whitespace and brackets as well
 					column := columnMap[cName]
+
 					predicate := &schema.Predicate{
 						Column:   column,
 						Operator: schema.EQUALS,
 					}
+
+					// do the joins
+					if i == 0 {
+						// first one gets empty
+						predicate.PredicateJoin = schema.EmptyOp
+					} else {
+						joiner := strings.TrimSpace(joiners[i-1])
+
+						if joiner == "AND" {
+							predicate.PredicateJoin = schema.AndOp
+						} else if joiner == "OR" {
+							predicate.PredicateJoin = schema.OrOp
+						}
+					}
+
 					cc, isEnum := column.Type.(schema.EnumType)
 					if isEnum {
 						ppp := strings.Split(pp[1], "::")
@@ -77,7 +94,7 @@ func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Inde
 							ExpType: cc,
 						}
 					} else {
-						vvv := strings.Split(pp[1], "::") // strip the type cast suffix if present, eg 'owner@company.com'::text
+						vvv := strings.Split(pp[1], "::")          // strip the type cast suffix if present, eg 'owner@company.com'::text
 						nonEnumVal := strings.Trim(vvv[0], " ()'") // remove whitespace, brackets and quotes as well
 						predicate.ColumnValue = &schema.RawExpr{
 							Val:     nonEnumVal,

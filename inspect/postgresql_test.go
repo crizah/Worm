@@ -75,14 +75,16 @@ func init() {
 		IsPartial: true,
 		Predicates: []*schema.Predicate{
 			{
-				Column:      userRole,
-				ColumnValue: &schema.RawExpr{Val: "admin", ExpType: userRoleType},
-				Operator:    schema.EQUALS,
+				Column:        userRole,
+				ColumnValue:   &schema.RawExpr{Val: "admin", ExpType: userRoleType},
+				Operator:      schema.EQUALS,
+				PredicateJoin: schema.EmptyOp,
 			},
 			{
-				Column:      userEmail,
-				ColumnValue: &schema.RawExpr{Val: "owner@company.com", ExpType: schema.TextType{}},
-				Operator:    schema.EQUALS,
+				Column:        userEmail,
+				ColumnValue:   &schema.RawExpr{Val: "owner@company.com", ExpType: schema.TextType{}},
+				Operator:      schema.EQUALS,
+				PredicateJoin: schema.AndOp,
 			},
 		},
 	}
@@ -284,6 +286,11 @@ func testPredicates(t *testing.T, e *schema.Predicate, g *schema.Predicate) bool
 
 	if e.Operator != g.Operator {
 		t.Errorf("Expected predicate operator %s got %s", e.Operator, g.Operator)
+		return false
+	}
+
+	if e.PredicateJoin != g.PredicateJoin {
+		t.Errorf("Expected predicate join %s got %s", e.PredicateJoin, g.PredicateJoin)
 		return false
 	}
 

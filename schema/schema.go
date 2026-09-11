@@ -33,9 +33,10 @@ type Index struct {
 }
 
 type Predicate struct {
-	Column      *Column
-	ColumnValue Expr
-	Operator    OperatorOption
+	Column        *Column
+	ColumnValue   Expr
+	Operator      OperatorOption
+	PredicateJoin BoolOp // this stores the join statement before this predicate "AND" <predicate>
 }
 
 type ForeignKey struct {
@@ -67,6 +68,14 @@ const (
 	NOTEQUAL OperatorOption = "!="
 	LESSER   OperatorOption = "<"
 	GREATER  OperatorOption = ">"
+)
+
+type BoolOp string
+
+const (
+	AndOp   BoolOp = "AND"
+	OrOp    BoolOp = "OR"
+	EmptyOp BoolOp = ""
 )
 
 // Expressions
