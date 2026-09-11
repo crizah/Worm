@@ -19,19 +19,20 @@ once the schema migration itself is in place , for the data migration:
 - inspector for postgres->schema
 - emitter (schema->sqlite migration file)
 
+# working on:
+supporting
+- partial indexes/ones with where clause eg: 
+`CREATE INDEX idx_scores_team_leaderboard ON employee_scores(team_id, user_id, points_awarded) WHERE superseded = false;`
+
+
 # Next
 - write sqlite specific functions for postgres functions that dont have a sqlite counterpart
 - sqlite schema migrater (needs to be in order of fks)
 
-
-# trade off
-- not supporting indexes on functions like lower(email) etc, if they are a part of a composite index, that index will be rebuilt without it (wrong, but out of scope for now)
-- a lot of loss, for example sqlite does have uuid, boolean etc, and also, does have some functions like gen_random_uuid(), so is the postgres table has 
-`id UUID PRIMARY KEY DEFAULT gen_random_uuid()` 
-it will just translate to 
-`id TEXT PRIMARY KEY` and the user will have to change their code to now generate a uuid before inserting rows manually
-
-
+# missed/gaps:
+- certain postgres types
+- check constraints
+- comments
 - reserved keywords in postgres that i havent accounted for yet (and their sqlite counterparts)
 `	"current_timestamp":       "CURRENT_TIMESTAMP",
 	"current_date":            "CURRENT_DATE",
@@ -43,6 +44,20 @@ it will just translate to
 	"system_user":  "NULL",
 	"current_role": "NULL",
 `
+
+
+the querier already has the right fields, the inspecter and the emitter need it
+
+
+# trade off
+- not supporting indexes on functions like lower(email) etc, if they are a part of a composite index, that index will be rebuilt without it (wrong, but out of scope for now)
+- a lot of loss, for example sqlite does have uuid, boolean etc, and also, does have some functions like gen_random_uuid(), so is the postgres table has 
+`id UUID PRIMARY KEY DEFAULT gen_random_uuid()` 
+it will just translate to 
+`id TEXT PRIMARY KEY` and the user will have to change their code to now generate a uuid before inserting rows manually
+
+- for certain indexes with predicates, only supporting = predicates right now, not >=, <= etc, (also include eg like LIKE, IN(), NOT IN() etc)
+
 
 # scope for later
 right now, the migrater is purely a one time thing. i.e, it will wipe your db, run the schema migrationa nd transfer all you data

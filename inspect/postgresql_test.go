@@ -21,11 +21,11 @@ var tableVisited = make(map[string]struct{}) // maps if this table is already vi
 
 // expected shape of querier/testdata/schema.sql after going through the querier + inspector
 func init() {
-	orgID := &schema.Column{Name: "id", Type: schema.UUIDType{}, Default: &schema.MethodExpr{Name: "gen_random_uuid"}}
+	orgID := &schema.Column{Name: "id", Type: schema.UUIDType{}, IsPK: true, Default: &schema.MethodExpr{Name: "gen_random_uuid"}}
 	orgName := &schema.Column{Name: "name", Type: schema.TextType{}}
-	orgDomain := &schema.Column{Name: "domain", Type: schema.TextType{}, IsUnique: true}
+	orgDomain := &schema.Column{Name: "domain", Type: schema.TextType{}, IsNullable: true, IsUnique: true}
 	orgAttendance := &schema.Column{Name: "attendance_enabled", Type: schema.BoolType{}, Default: &schema.RawExpr{Val: "false", ExpType: schema.BoolType{}}}
-	orgCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}, Default: &schema.MethodExpr{Name: "now"}}
+	orgCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}, IsNullable: true, Default: &schema.MethodExpr{Name: "now"}}
 
 	orgPK := &schema.Index{
 		Name:     "organizations_pkey",
@@ -46,12 +46,12 @@ func init() {
 		Indexes: []*schema.Index{orgPK, orgDomainUnique},
 	}
 
-	userID := &schema.Column{Name: "id", Type: schema.UUIDType{}, Default: &schema.MethodExpr{Name: "gen_random_uuid"}}
+	userID := &schema.Column{Name: "id", Type: schema.UUIDType{}, IsPK: true, Default: &schema.MethodExpr{Name: "gen_random_uuid"}}
 	userOrgID := &schema.Column{Name: "org_id", Type: schema.UUIDType{}, IsUnique: true}
 	userEmail := &schema.Column{Name: "email", Type: schema.TextType{}, IsUnique: true}
 	userRoleType := schema.EnumType{Name: "user_role", Values: []string{"admin", "member", "viewer"}}
 	userRole := &schema.Column{Name: "role", Type: userRoleType, Default: &schema.RawExpr{Val: "member", ExpType: userRoleType}}
-	userCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}, Default: &schema.MethodExpr{Name: "now"}}
+	userCreatedAt := &schema.Column{Name: "created_at", Type: schema.TimeType{}, IsNullable: true, Default: &schema.MethodExpr{Name: "now"}}
 
 	usersPK := &schema.Index{
 		Name:     "users_pkey",
@@ -68,12 +68,30 @@ func init() {
 		Name:    "idx_users_org_id",
 		Columns: []*schema.Column{userOrgID},
 	}
+	usersOrgAdminPartial := &schema.Index{
+		Name:      "idx_users_org_admin",
+		Columns:   []*schema.Column{userOrgID},
+		IsUnique:  true,
+		IsPartial: true,
+		Predicates: []*schema.Predicate{
+			{
+				Column:      userRole,
+				ColumnValue: &schema.RawExpr{Val: "admin", ExpType: userRoleType},
+				Operator:    schema.EQUALS,
+			},
+			{
+				Column:      userEmail,
+				ColumnValue: &schema.RawExpr{Val: "owner@company.com", ExpType: schema.TextType{}},
+				Operator:    schema.EQUALS,
+			},
+		},
+	}
 
 	users := &schema.Table{
 		Name:    "users",
 		Columns: []*schema.Column{userID, userOrgID, userEmail, userRole, userCreatedAt},
 		PK:      usersPK,
-		Indexes: []*schema.Index{usersPK, usersOrgEmailUnique, usersOrgIDIndex},
+		Indexes: []*schema.Index{usersPK, usersOrgEmailUnique, usersOrgIDIndex, usersOrgAdminPartial},
 		FKs: []*schema.ForeignKey{
 			{
 				Name:       "users_org_id_fkey",
@@ -180,17 +198,17 @@ func testColumns(t *testing.T, e *schema.Column, g *schema.Column) bool {
 	}
 
 	if e.IsNullable != g.IsNullable {
-		t.Errorf("Expected %t", e.IsNullable)
+		t.Errorf("Expected nullable %t", e.IsNullable)
 		return false
 	}
 
 	if e.IsPK != g.IsPK {
-		t.Errorf("Expected %t", e.IsPK)
+		t.Errorf("Expected pk %t", e.IsPK)
 		return false
 	}
 
 	if e.IsUnique != g.IsUnique {
-		t.Errorf("Expected %t", e.IsUnique)
+		t.Errorf("Expected unique %t", e.IsUnique)
 		return false
 	}
 
@@ -234,8 +252,47 @@ func testIndexes(t *testing.T, e *schema.Index, g *schema.Index) bool {
 		return false
 	}
 
+	if e.IsPartial != g.IsPartial {
+		t.Errorf("Error in IsPartial expected %t ", e.IsPartial)
+		return false
+	}
+
+	predMap := checkStuff(t, e.Predicates, g.Predicates, func(p *schema.Predicate) string {
+		return p.Column.Name
+	})
+	if predMap == nil {
+		return false
+	}
+
+	for ee, gg := range predMap {
+		if !testPredicates(t, ee, gg) {
+			t.Errorf("Error in Predicate %s", ee.Column.Name)
+			return false
+		}
+	}
+
 	return true
 
+}
+
+func testPredicates(t *testing.T, e *schema.Predicate, g *schema.Predicate) bool {
+	// just the column name, not the whole column
+	if e.Column.Name != g.Column.Name {
+		t.Errorf("Expected predicate column %s got %s", e.Column.Name, g.Column.Name)
+		return false
+	}
+
+	if e.Operator != g.Operator {
+		t.Errorf("Expected predicate operator %s got %s", e.Operator, g.Operator)
+		return false
+	}
+
+	if !reflect.DeepEqual(e.ColumnValue, g.ColumnValue) {
+		t.Errorf("Expected predicate value %+v got %+v", e.ColumnValue, g.ColumnValue)
+		return false
+	}
+
+	return true
 }
 
 func testFks(t *testing.T, e *schema.ForeignKey, g *schema.ForeignKey) bool {

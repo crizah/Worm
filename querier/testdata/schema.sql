@@ -18,3 +18,5 @@ CREATE TABLE users (
 );
 
 CREATE INDEX idx_users_org_id ON users(org_id);
+
+CREATE UNIQUE INDEX idx_users_org_admin ON users(org_id) WHERE role = 'admin' AND email = 'owner@company.com';

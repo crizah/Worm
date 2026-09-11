@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/crizah/Worm/querier"
@@ -13,6 +14,9 @@ type Inspector interface {
 	buildFk(fk querier.FkRow, refTable *schema.Table) *schema.ForeignKey
 }
 
+// splits a partial index predicate on its top level AND/OR into one raw side per predicate
+var predicateSplitRe = regexp.MustCompile(`\s*(AND|OR)\s*`)
+
 func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Index, *schema.Index) {
 	// Note: both ind and cols are already table specific
 
@@ -20,6 +24,12 @@ func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Inde
 	indexMap := make(map[string][]*schema.Column)
 	// maps if this index is unqiue or not via index name
 	isUnique := make(map[string]bool)
+	predicateMap := make(map[string][]*schema.Predicate) // maps index name to Predicates if exists
+	columnMap := make(map[string]*schema.Column)         // maps columnName to column
+
+	for _, c := range cols {
+		columnMap[c.Name] = c
+	}
 
 	var pk string
 	for _, i := range ind {
@@ -28,6 +38,58 @@ func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Inde
 		if i.IsPrimaryKey {
 			pk = i.Name
 		}
+		// get the predicates
+		if i.IsPartial {
+			// composite partial indexes have multiple rows (one per column), only parse once per index name
+			if _, done := predicateMap[i.Name]; !done {
+				// format:
+				// (event_type = 'MISSED_DEADLINE'::text) AND (superseded = false)
+				// each side of AND is one predicate (could also be OR)
+				s := *i.PartialPredicate
+				parts := predicateSplitRe.Split(s, -1)
+
+				var pred []*schema.Predicate
+				for _, p := range parts {
+					//  this is in the format columnName = 'VALUE'::<enum_name>, (if enum type)
+					// or columnName = <value> if non enum type
+					//
+					// get the column name, if the column type is enum type, do the enum type extraction
+					// i.e:
+					//
+					// parts := strings.Split(val, "::")
+					// cleanVal := strings.Trim(parts[0], "'")
+					//
+					// otherwise, do normal extraction
+					//
+					pp := strings.Split(p, "=")         // NOTE: hardcoding = operator here, can support more later on
+					cName := strings.Trim(pp[0], " ()") // remove whitespace and brackets as well
+					column := columnMap[cName]
+					predicate := &schema.Predicate{
+						Column:   column,
+						Operator: schema.EQUALS,
+					}
+					cc, isEnum := column.Type.(schema.EnumType)
+					if isEnum {
+						ppp := strings.Split(pp[1], "::")
+						enumVal := strings.Trim(ppp[0], " '") // remove whitespace then quotes
+						predicate.ColumnValue = &schema.RawExpr{
+							Val:     enumVal,
+							ExpType: cc,
+						}
+					} else {
+						vvv := strings.Split(pp[1], "::") // strip the type cast suffix if present, eg 'owner@company.com'::text
+						nonEnumVal := strings.Trim(vvv[0], " ()'") // remove whitespace, brackets and quotes as well
+						predicate.ColumnValue = &schema.RawExpr{
+							Val:     nonEnumVal,
+							ExpType: column.Type,
+						}
+					}
+					pred = append(pred, predicate)
+				}
+				predicateMap[i.Name] = pred
+			}
+		}
+
 		isUnique[i.Name] = i.IsUnique
 		for _, cname := range cols {
 			if cname.Name == i.ColumnName {
@@ -41,11 +103,14 @@ func buildIndexes(ind []querier.IndexRow, cols []*schema.Column) ([]*schema.Inde
 	var ans []*schema.Index
 	var Pk *schema.Index
 	for name, columns := range indexMap { // iterate the map to avoid duplicates
+		isPart := len(predicateMap[name]) > 0
 		index := &schema.Index{
-			Name:     name,
-			Columns:  columns,
-			IsPK:     pk == name,
-			IsUnique: isUnique[name],
+			Name:       name,
+			Columns:    columns,
+			IsPK:       pk == name,
+			IsUnique:   isUnique[name],
+			IsPartial:  isPart,
+			Predicates: predicateMap[name],
 		}
 		if index.IsPK {
 			Pk = index

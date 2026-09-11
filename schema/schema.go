@@ -24,10 +24,18 @@ type Column struct {
 }
 
 type Index struct {
-	Name     string
-	Columns  []*Column
-	IsPK     bool
-	IsUnique bool
+	Name       string
+	Columns    []*Column
+	IsPK       bool
+	IsUnique   bool
+	IsPartial  bool
+	Predicates []*Predicate
+}
+
+type Predicate struct {
+	Column      *Column
+	ColumnValue Expr
+	Operator    OperatorOption
 }
 
 type ForeignKey struct {
@@ -48,6 +56,17 @@ const (
 	Cascade    ReferenceOption = "CASCADE"
 	SetNull    ReferenceOption = "SET NULL"
 	SetDefault ReferenceOption = "SET DEFAULT"
+)
+
+type OperatorOption string
+
+const (
+	EQUALS   OperatorOption = "="
+	LEQUAL   OperatorOption = "<="
+	GEQUAL   OperatorOption = ">="
+	NOTEQUAL OperatorOption = "!="
+	LESSER   OperatorOption = "<"
+	GREATER  OperatorOption = ">"
 )
 
 // Expressions
