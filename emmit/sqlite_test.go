@@ -2,6 +2,7 @@ package emitter
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -13,8 +14,8 @@ import (
 
 var expectedSortTable = []string{"organizations", "users"}
 var expectedStatements = []string{
-	"CREATE TABLE organizations (\nid TEXT NOT NULL DEFAULT NUHHUH,\nname TEXT NOT NULL ,\ndomain TEXT  ,\nattendance_enabled INTEGER NOT NULL DEFAULT 0,\ncreated_at TEXT  DEFAULT CURRENT_TIMESTAMP,\nPRIMARY KEY (id)\n);",
-	"CREATE TABLE users (\nid TEXT NOT NULL DEFAULT NUHHUH,\norg_id TEXT NOT NULL ,\nemail TEXT NOT NULL ,\nrole TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('admin', 'member', 'viewer')),\ncreated_at TEXT  DEFAULT CURRENT_TIMESTAMP,\nPRIMARY KEY (id),\nFOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE ON UPDATE NO ACTION\n);",
+	fmt.Sprintf("CREATE TABLE organizations (\nid TEXT NOT NULL DEFAULT %s,\nname TEXT NOT NULL ,\ndomain TEXT  ,\nattendance_enabled INTEGER NOT NULL DEFAULT 0,\ncreated_at TEXT  DEFAULT CURRENT_TIMESTAMP,\nPRIMARY KEY (id)\n);", sqliteGenRandomUUID),
+	fmt.Sprintf("CREATE TABLE users (\nid TEXT NOT NULL DEFAULT %s,\norg_id TEXT NOT NULL ,\nemail TEXT NOT NULL ,\nrole TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('admin', 'member', 'viewer')),\ncreated_at TEXT  DEFAULT CURRENT_TIMESTAMP,\nPRIMARY KEY (id),\nFOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE ON UPDATE NO ACTION\n);", sqliteGenRandomUUID),
 	"CREATE UNIQUE INDEX organizations_domain_key ON organizations (domain);",
 	"CREATE INDEX idx_users_org_id ON users (org_id);",
 	"CREATE UNIQUE INDEX users_org_id_email_key ON users (org_id,email);",

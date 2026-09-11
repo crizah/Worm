@@ -173,6 +173,15 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 
 }
 
+var sqliteGenRandomUUID = `(
+        lower(hex(randomblob(4))) || '-' ||
+        lower(hex(randomblob(2))) || '-4' ||
+        substr(lower(hex(randomblob(2))),2) || '-' ||
+        substr('89ab',abs(random()) % 4 + 1, 1) ||
+        substr(lower(hex(randomblob(2))),2) || '-' ||
+        lower(hex(randomblob(6)))
+    )`
+
 var sqliteTypeMap = map[schema.Type]string{
 	// sqlite doenst have boolean, so map it to integer
 	schema.BoolType{}:    "INTEGER",
@@ -195,7 +204,7 @@ var schemaFuncsToSqliteDefaults = map[string]string{
 	"transaction_timestamp": "CURRENT_TIMESTAMP",
 	"statement_timestamp":   "CURRENT_TIMESTAMP",
 	"clock_timestamp":       "CURRENT_TIMESTAMP",
-	"gen_random_uuid":       "NULL",
+	"gen_random_uuid":       sqliteGenRandomUUID,
 	"uuid_generate_v4":      "NULL",
 	"nextval":               "NULL", // SQLite uses INTEGER PRIMARY KEY AUTOINCREMENT instead
 	"inet_client_addr":      "NULL",
