@@ -25,6 +25,8 @@ supporting
 `CREATE INDEX idx_scores_team_leaderboard ON employee_scores(team_id, user_id, points_awarded) WHERE superseded = false;`
 
 
+
+
 # Next
 - write sqlite specific functions for postgres functions that dont have a sqlite counterpart
 - sqlite schema migrater (needs to be in order of fks)
@@ -51,10 +53,7 @@ the querier already has the right fields, the inspecter and the emitter need it
 
 # trade off
 - not supporting indexes on functions like lower(email) etc, if they are a part of a composite index, that index will be rebuilt without it (wrong, but out of scope for now)
-- a lot of loss, for example sqlite does have uuid, boolean etc, and also, does have some functions like gen_random_uuid(), so is the postgres table has 
-`id UUID PRIMARY KEY DEFAULT gen_random_uuid()` 
-it will just translate to 
-`id TEXT PRIMARY KEY` and the user will have to change their code to now generate a uuid before inserting rows manually
+- a lot of loss, for example sqlite does have uuid, boolean etc, and also, does have some functions which sqlite doesnt support
 
 - for certain indexes with predicates, only supporting = predicates right now, not >=, <= etc, (also include eg like LIKE, IN(), NOT IN() etc)
 

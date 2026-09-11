@@ -31,9 +31,10 @@ PRIMARY KEY (id),
 FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 
-CREATE UNIQUE INDEX organizations_domain_key ON organizations (domain);
+CREATE UNIQUE INDEX organizations_domain_key ON organizations (domain) ;
 
-CREATE INDEX idx_users_org_id ON users (org_id);
+CREATE UNIQUE INDEX idx_users_org_admin ON users (org_id) WHERE role = 'admin' AND email = 'owner@company.com' ;
 
-CREATE UNIQUE INDEX users_org_id_email_key ON users (org_id,email);
+CREATE INDEX idx_users_org_id ON users (org_id) ;
 
+CREATE UNIQUE INDEX users_org_id_email_key ON users (org_id,email) ;

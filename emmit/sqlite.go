@@ -47,7 +47,49 @@ func (e *SQLiteEmitter) Emitt() []string {
 				isUnique = "UNIQUE "
 			}
 
-			stmts = append(stmts, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s);", isUnique, i.Name, t.Name, strings.Join(cols, ",")))
+			isPartial := ""
+			if i.IsPartial {
+				isPartial = "WHERE"
+			}
+
+			if isPartial != "" {
+				predString := ""
+				for _, pred := range i.Predicates {
+					// do the check for enumtype and booltype here
+
+					p := fmt.Sprintf("%s ", pred.PredicateJoin) // start with the join
+					// type convert to raw exp
+					rawExp, _ := pred.ColumnValue.(*schema.RawExpr)
+
+					// check if its bool
+					_, ok := pred.Column.Type.(schema.BoolType)
+					if ok {
+						currVal := 0
+						if rawExp.Val == "true" {
+							currVal = 1
+						}
+						p += fmt.Sprintf(" %s %s %d ", pred.Column.Name, pred.Operator, currVal)
+					} else {
+
+						// check if its int
+						_, ok = pred.Column.Type.(schema.IntegerType)
+						if ok {
+							// no quotes
+							p += fmt.Sprintf(" %s %s %s ", pred.Column.Name, pred.Operator, rawExp.Val)
+						} else {
+
+							// othewrise, its an enum typr or a text type, with quotes
+							currValue := "'" + rawExp.Val + "'"
+							p += fmt.Sprintf("%s %s %s ", pred.Column.Name, pred.Operator, currValue)
+
+						}
+					}
+					predString += p
+				}
+				isPartial += predString
+			}
+
+			stmts = append(stmts, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s) %s;", isUnique, i.Name, t.Name, strings.Join(cols, ","), isPartial))
 		}
 	}
 	return stmts
