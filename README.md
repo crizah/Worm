@@ -6,8 +6,18 @@ postgreql db   ---querier---> schema.Schema ------emitter----> Sqlite
                <----emitter-               <-----querier-------
 
 once the schema migration itself is in place , for the data migration:
-- order the schema by FK constraints :check: 
+
+- order the schema by FK constraints (resuse the same fk dependency function we have in place probably so do the parent tables first)
 - convert column values (postgres true/false becoumes 1/0 in sqlite etc)
+
+HLD for ^^ 
+
+follow a normaliser pattern, just like the schema migrater
+choose normalised data types, so we can build the same language specific encoder -> canon -> decoder pipeline with the actual data
+then, each column/data batch gets normalised first, then emitted into desired type
+
+
+
 - use batch processing, read n rows, maintain pagination, write those n rows
 - MAKE IT RESUMABLE, shouldnt loose data midway through (probably an sqlite table for that)
 - verification
