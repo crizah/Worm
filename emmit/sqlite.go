@@ -157,6 +157,13 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 
 	}
 
+	boolCheck := ""
+
+	if isBool {
+		// add a check for CHECK (%s IN (0, 1)) columnName
+		boolCheck = fmt.Sprintf("CHECK (%s IN (0, 1))", c.Name)
+	}
+
 	defaultValue := ""
 	if r, ok := c.Default.(*schema.RawExpr); ok {
 		// raw exp
@@ -211,7 +218,7 @@ func (e *SQLiteEmitter) buildColumns(c *schema.Column) string {
 
 	}
 
-	ans := fmt.Sprintf("%s %s %s %s", c.Name, typeValue, notNull, defaultValue)
+	ans := fmt.Sprintf("%s %s %s %s %s", c.Name, typeValue, notNull, defaultValue, boolCheck)
 	return ans
 
 }

@@ -6,7 +6,7 @@ postgreql db   ---querier---> schema.Schema ------emitter----> Sqlite
                <----emitter-               <-----querier-------
 
 once the schema migration itself is in place , for the data migration:
-- order the schema by FK constraints
+- order the schema by FK constraints :check: 
 - convert column values (postgres true/false becoumes 1/0 in sqlite etc)
 - use batch processing, read n rows, maintain pagination, write those n rows
 - MAKE IT RESUMABLE, shouldnt loose data midway through (probably an sqlite table for that)
@@ -21,6 +21,10 @@ once the schema migration itself is in place , for the data migration:
 - schema migrator
 
 # working on:
+
+# TODO:
+make boolean types in sqlite be emitted with a check 
+`is_active INTEGER CHECK (is_active IN (0, 1))`
 
 # Next
 - start on the actual data migration part 
@@ -41,9 +45,6 @@ once the schema migration itself is in place , for the data migration:
 	"system_user":  "NULL",
 	"current_role": "NULL",
 `
-
-
-the querier already has the right fields, the inspecter and the emitter need it
 
 
 # trade off
