@@ -1,1 +1,0 @@
-CREATE TYPE user_status AS ENUM ('INVITED', 'ACTIVE', 'SUSPENDED');
