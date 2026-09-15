@@ -98,3 +98,10 @@ type MethodExpr struct {
 
 func (e RawExpr) expr()    {}
 func (e MethodExpr) expr() {}
+
+// batch struct that stores each batch value data
+type Batch struct {
+	Table   string
+	Columns []string
+	Rows    [][]any // ordered index with ith value in inner loop corresponding to ith column
+}

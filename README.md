@@ -33,8 +33,7 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 # working on:
 
 # TODO:
-make boolean types in sqlite be emitted with a check 
-`is_active INTEGER CHECK (is_active IN (0, 1))`
+flag to the user if a table doesnt have a unique index, or dont have a unique index where all columns are non nullable, fail this in the inspecter stage itself
 
 # Next
 - start on the actual data migration part 
@@ -63,6 +62,8 @@ make boolean types in sqlite be emitted with a check
 
 - for certain indexes with predicates, only supporting = predicates right now, not >=, <= etc, (also include eg like LIKE, IN(), NOT IN() etc)
 
+- not supporting the entire migration if a table doesnt have a unqiue index and if they do have unique indexes, but none of them not null
+
 
 
 # scope for later
@@ -70,3 +71,24 @@ right now, the migrater is purely a one time thing. i.e, it will wipe your db, r
 later on, we can make this guy track state, the target connection doesnt need to be wiped, track its state and only migrate the diff, like alembic, but thats scope for later (never)
 
 - write sqlite specific functions for postgres functions that dont have a sqlite counterpart
+
+### references:
+https://www.citusdata.com/blog/2016/03/30/five-ways-to-paginate/
+
+### cdc model:
+- we create a snapshot of the db
+- we perform paginated reads on this snapshot 
+      - for tables with unique indexes, we use that index for pagination
+      - is the table doesnt have a unique index, what is wrong with u
+      - we can either just migrate the entire table in one go, but no resume available simce we have nothing to store in pagination
+      - we CAN use ctid, which is the physical row allocater, we can then do a `SELECT ctid, * FROM t WHERE ctid > $1 ORDER BY ctid LIMIT 500;` 
+       problem with this too is that you have to do everythin in one transaction or the ctid can change,
+      AND we cant have resume becasue of the volatile nature of ctid, so we have to either write the entire table in one go, or risk duplicate elements on a crash and resume (which wont even get filetered out becasue there ints any unique index)
+      so, i think for this, we just flag, if any table doesnt have a unqiue constraint, we skip the entire migration
+      - also, if you tables unique index doesnt have a not null constraint, kill urself, no service4u, becasue the pagination of >col will always be true
+
+     - for composite unqiue indexes, we compare on all the values 
+     `WHERE (col1, col2) > ($1, $2) ORDER BY col1, col2 LIMIT N`
+     - we store the last read column/columns ids/values in out state table, per batch, after writing to the target db
+     - on resume, we pick up from there itself
+- after everything is comitted to target db, we can move to the next snapshot and repeat process until both the dbs are synced
