@@ -2,28 +2,26 @@ package emitter
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/crizah/Worm/schema"
 )
 
 type SQLiteEmitter struct {
-	Schema   *schema.Schema
-	dirPath  string
-	fileName string
+	Schema *schema.Schema
 }
 
-func NewSqlEmitter(sch *schema.Schema, path string, filename string) *SQLiteEmitter {
+func NewSqlEmitter(sch *schema.Schema) *SQLiteEmitter {
 	t := sortTables(sch.Tables)
 	sch.Tables = t
 	return &SQLiteEmitter{
-		Schema:   sch,
-		dirPath:  path, // path to write the migration file
-		fileName: filename,
+		Schema: sch,
 	}
 }
 
-func (e *SQLiteEmitter) Emitt() []string {
+func (e *SQLiteEmitter) Emitt(dir string, fileName string) ([]string, error) {
 	// writes migration files
 	var stmts []string
 	for _, t := range e.Schema.Tables {
@@ -92,8 +90,34 @@ func (e *SQLiteEmitter) Emitt() []string {
 			stmts = append(stmts, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s) %s;", isUnique, i.Name, t.Name, strings.Join(cols, ","), isPartial))
 		}
 	}
-	writeFile(e.dirPath, e.fileName, stmts)
-	return stmts
+	err := e.writeFile(stmts, dir, fileName)
+	if err != nil {
+		return nil, err
+	}
+	return stmts, err
+}
+
+func (sq *SQLiteEmitter) writeFile(stmts []string, dir string, fileName string) error {
+	// add this into Emitter, this is out rn only for testing purpouses
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	fullPath := filepath.Join(dir, fileName)
+
+	file, err := os.Create(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+
+	defer file.Close()
+	for _, line := range stmts {
+		if _, err := file.WriteString(line + "\n\n"); err != nil {
+			return fmt.Errorf("failed to write to file: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (e *SQLiteEmitter) buildTable(t *schema.Table) string {

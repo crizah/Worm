@@ -35,10 +35,10 @@ func TestSqLiteEmitter(t *testing.T) {
 	pi := inspect.NewPInspector(q)
 	sc, err := pi.Inspect(ctx)
 
-	emm := NewSqlEmitter(sc, "./", "sqlite-migration-test.sql")
-	stmts := emm.Emitt()
-
-	err = writeFile(emm.dirPath, emm.fileName, stmts)
+	emm := NewSqlEmitter(sc)
+	dir := "./"
+	fileName := fmt.Sprintf("%s-migration.sql", sc.DbName)
+	stmts, err := emm.Emitt(dir, fileName)
 	if err != nil {
 		t.Fatalf("error writing file: %v", err)
 	}

@@ -31,12 +31,17 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 - schema migrator
 
 # working on:
+cleaning up the data migrater code and makin the global function
 
 # TODO:
 flag to the user if a table doesnt have a unique index, or dont have a unique index where all columns are non nullable, fail this in the inspecter stage itself
 
 # Next
-- start on the actual data migration part 
+- add resume to migrater (establish connection again and load everything back into memeory)
+- increase limit for reads, but fir writes (especially for sqlite), fit to the limitations of that db (999 for sqlite)
+- do the actual looping to get the next snapshot
+- test the migrater
+- capture every stage of the pipeline in the state db, so we can resume from scratch (low priority)
 
 
 # missed/gaps:

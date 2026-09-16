@@ -1,49 +1,12 @@
 package emitter
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
 	"github.com/crizah/Worm/schema"
 )
 
 type Emitter interface {
-	Emitt() []string
-	buildTable(t *schema.Table) string
-	buildColumns(c *schema.Column) string
-}
-
-func writeFile(d string, f string, stmts []string) error {
-	// add this into Emitter, this is out rn only for testing purpouses
-	dir := "./"
-	if d != "" {
-		dir = d
-	}
-
-	fileName := "sqlite-migration-test.sql"
-	if f != "" {
-		fileName = f
-	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	fullPath := filepath.Join(dir, fileName)
-
-	file, err := os.Create(fullPath)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-
-	defer file.Close()
-	for _, line := range stmts {
-		if _, err := file.WriteString(line + "\n\n"); err != nil {
-			return fmt.Errorf("failed to write to file: %w", err)
-		}
-	}
-
-	return nil
+	Emitt() ([]string, error)
+	writeFile(stmts []string) error // has to have this fnc, thats why its in an interface
 }
 
 func sortTables(tables []*schema.Table) []*schema.Table {

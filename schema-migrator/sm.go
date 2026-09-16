@@ -6,34 +6,33 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/crizah/Worm/schema"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
-)
-
-type dialect int // creating enums like this
-
-const (
-	sqliteDialect   dialect = iota // gets 0
-	postgresDialect                // will get 1
 )
 
 type SchemaMigrator struct {
 	connStr       string
 	migrationFile string
-	dialect       dialect
+	dialect       schema.Dialect
 	db            *sql.DB
 	mu            sync.Mutex // one migration at a time per migrator
 }
 
-func NewSchemaMigrator(c string, m string) (*SchemaMigrator, error) {
-	d := resolveDialect(c)
+func NewSchemaMigrator(c string, d schema.Dialect, m string) (*SchemaMigrator, error) {
 
-	if d == sqliteDialect {
+	if d == schema.SqliteDialect {
 		// if db file doesnt exist, make one with that fileName
 		if _, err := os.Stat(c); os.IsNotExist(err) {
+
+			if err := os.MkdirAll(filepath.Dir(c), 0755); err != nil {
+				return nil, fmt.Errorf("creating directory: %w", err)
+			}
+
 			f, err := os.Create(c)
 			if err != nil {
 				return nil, fmt.Errorf("creating sqlite db file: %w", err)
@@ -42,7 +41,7 @@ func NewSchemaMigrator(c string, m string) (*SchemaMigrator, error) {
 		}
 	}
 
-	db, err := sql.Open(driverName(d), c)
+	db, err := sql.Open(schema.DriverName(d), c)
 	if err != nil {
 		return nil, fmt.Errorf("opening db: %w", err)
 	}
@@ -58,22 +57,6 @@ func NewSchemaMigrator(c string, m string) (*SchemaMigrator, error) {
 		dialect:       d,
 		db:            db,
 	}, nil
-}
-
-// postgres conn strings are a url or a
-// key=value dsn, anything else we treat as a sqlite file path
-func resolveDialect(connStr string) dialect {
-	if strings.HasPrefix(connStr, "postgres://") || strings.HasPrefix(connStr, "postgresql://") || strings.Contains(connStr, "host=") {
-		return postgresDialect
-	}
-	return sqliteDialect
-}
-
-func driverName(d dialect) string {
-	if d == postgresDialect {
-		return "postgres"
-	}
-	return "sqlite3"
 }
 
 func (sm *SchemaMigrator) MigrateSchema() error {
@@ -139,7 +122,7 @@ func (sm *SchemaMigrator) wipe(tx *sql.Tx) error {
 
 	for _, t := range tables {
 		drop := fmt.Sprintf("DROP TABLE IF EXISTS %s", t)
-		if sm.dialect == postgresDialect {
+		if sm.dialect == schema.PostgresDialect {
 			// postgres enforces fks, cascade so drop order doesnt matter
 			drop += " CASCADE"
 		}
@@ -153,9 +136,9 @@ func (sm *SchemaMigrator) wipe(tx *sql.Tx) error {
 func (sm *SchemaMigrator) listTables(tx *sql.Tx) ([]string, error) {
 	var query string
 	switch sm.dialect {
-	case sqliteDialect:
+	case schema.SqliteDialect:
 		query = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-	case postgresDialect:
+	case schema.PostgresDialect:
 		query = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
 	default:
 		return nil, fmt.Errorf("unknown dialect")
