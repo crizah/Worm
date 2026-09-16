@@ -3,6 +3,7 @@ package schemamigrator
 // no interface, just migrates the migration file to the connection string or the .db file
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -59,7 +60,7 @@ func NewSchemaMigrator(c string, d schema.Dialect, m string) (*SchemaMigrator, e
 	}, nil
 }
 
-func (sm *SchemaMigrator) MigrateSchema() error {
+func (sm *SchemaMigrator) MigrateSchema(ctx context.Context) error {
 	// acquire lock
 	sm.mu.Lock()
 	defer sm.mu.Unlock()

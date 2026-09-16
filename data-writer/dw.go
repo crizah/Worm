@@ -1,8 +1,12 @@
 package datawriter
 
-import "github.com/crizah/Worm/schema"
+import (
+	"context"
 
-type DM interface {
-	Write(b *schema.Batch, colMap map[string]schema.Type, indexColumns []string) ([]any, error)
-	encode(t schema.Type, v any) (any, error)
+	"github.com/crizah/Worm/schema"
+)
+
+type DW interface {
+	Write(ctx context.Context, b *schema.Batch, colMap map[string]schema.Type, indexColumns []string) ([]any, error)
+	encode(ctx context.Context, t schema.Type, v any) (any, error)
 }

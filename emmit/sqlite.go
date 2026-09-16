@@ -1,6 +1,7 @@
 package emitter
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +22,7 @@ func NewSqlEmitter(sch *schema.Schema) *SQLiteEmitter {
 	}
 }
 
-func (e *SQLiteEmitter) Emitt(dir string, fileName string) ([]string, error) {
+func (e *SQLiteEmitter) Emitt(ctx context.Context, dir string, fileName string) ([]string, error) {
 	// writes migration files
 	var stmts []string
 	for _, t := range e.Schema.Tables {

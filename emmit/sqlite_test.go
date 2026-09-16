@@ -38,7 +38,7 @@ func TestSqLiteEmitter(t *testing.T) {
 	emm := NewSqlEmitter(sc)
 	dir := "./"
 	fileName := fmt.Sprintf("%s-migration.sql", sc.DbName)
-	stmts, err := emm.Emitt(dir, fileName)
+	stmts, err := emm.Emitt(ctx, dir, fileName)
 	if err != nil {
 		t.Fatalf("error writing file: %v", err)
 	}

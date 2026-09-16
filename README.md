@@ -35,6 +35,7 @@ cleaning up the data migrater code and makin the global function
 
 # TODO:
 flag to the user if a table doesnt have a unique index, or dont have a unique index where all columns are non nullable, fail this in the inspecter stage itself
+- get rid of like pinging at every step lol, ping once
 
 # Next
 - add resume to migrater (establish connection again and load everything back into memeory)

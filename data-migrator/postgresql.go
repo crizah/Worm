@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -24,7 +23,7 @@ type PostgresDataMigrator struct {
 	tableIndex map[string]*schema.Index // the index we use for pagination, mapped to its table
 	limit      int                      // the batch limit of how many rows to process at a time, dont let it exceed 999
 	colMap     map[string]schema.Type   // stores the column type mapped to tableName+columnName
-	writer     datawriter.DM            // the writer interface
+	writer     datawriter.DW            // the writer interface, dont store this in here lol
 
 	slotName string // current slot name
 	lsn      pglogrepl.LSN
@@ -64,7 +63,7 @@ func getIndex(t *schema.Table) (*schema.Index, error) {
 	return nil, fmt.Errorf("Didnt find any valid index") // TODO: again, have this failure exist on inspecter phase itself
 }
 
-func NewPostgresDM(conn string, stateDb string, sc []*schema.Table, limit int, w datawriter.DM) (*PostgresDataMigrator, error) {
+func NewPostgresDM(conn string, stateDb *sql.DB, sc []*schema.Table, limit int, w datawriter.DW) (*PostgresDataMigrator, error) {
 	// setup and ping postgres db
 	db, err := sql.Open("postgres", conn)
 	if err != nil {
@@ -94,26 +93,7 @@ func NewPostgresDM(conn string, stateDb string, sc []*schema.Table, limit int, w
 
 	p := &PostgresDataMigrator{db: db, connStr: conn, tables: t, tableIndex: indexTable, limit: limit, colMap: cMap, writer: w}
 
-	// setup and ping sqlite state db
-	// if db file doesnt exist, make one with that fileName
-	if _, err := os.Stat(stateDb); os.IsNotExist(err) {
-		f, err := os.Create(stateDb)
-		if err != nil {
-			return nil, fmt.Errorf("creating sqlite db file: %w", err)
-		}
-		f.Close()
-	}
-
-	sqlDb, err := sql.Open("sqlite3", stateDb)
-	if err != nil {
-		return nil, fmt.Errorf("opening db: %w", err)
-	}
-
-	// ping  db file
-	if err := sqlDb.Ping(); err != nil {
-		return nil, fmt.Errorf("pinging sqlDb: %w", err)
-	}
-	p.stateDb = sqlDb
+	p.stateDb = stateDb
 
 	// create the state tracking table for snapshots
 	_, err = p.stateDb.Exec(`
@@ -148,8 +128,7 @@ func NewPostgresDM(conn string, stateDb string, sc []*schema.Table, limit int, w
 	return p, nil
 }
 
-func (p *PostgresDataMigrator) CreateSnapshot() error {
-	ctx := context.Background()
+func (p *PostgresDataMigrator) CreateSnapshot(ctx context.Context) error {
 
 	// CREATE_REPLICATION_SLOT isnt sql, it needs a connection opened in replication mode, lib/pq cant do this
 	cfg, err := pgconn.ParseConfig(p.connStr)
@@ -186,7 +165,7 @@ func (p *PostgresDataMigrator) CreateSnapshot() error {
 	p.lsn = lsn
 	p.snapshotId = result.SnapshotName
 
-	if err := p.persistSnapshot(); err != nil {
+	if err := p.persistSnapshot(ctx); err != nil {
 		return fmt.Errorf("persisting snapshot state: %w", err)
 	}
 
@@ -201,7 +180,7 @@ func (p *PostgresDataMigrator) CreateSnapshot() error {
 	}
 	p.snapshotTx = tx
 
-	err = p.seedBatchState()
+	err = p.seedBatchState(ctx)
 	if err != nil {
 		return err
 	}
@@ -209,7 +188,7 @@ func (p *PostgresDataMigrator) CreateSnapshot() error {
 	return nil
 }
 
-func (p *PostgresDataMigrator) persistSnapshot() error {
+func (p *PostgresDataMigrator) persistSnapshot(ctx context.Context) error {
 	_, err := p.stateDb.Exec(
 		`INSERT INTO capture_snapshot_state (slot_name, snapshot_id, lsn, created_at) VALUES (?, ?, ?, ?)`,
 		p.slotName, p.snapshotId, p.lsn.String(), time.Now().UTC().Format(time.RFC3339),
@@ -217,7 +196,7 @@ func (p *PostgresDataMigrator) persistSnapshot() error {
 	return err
 }
 
-func (p *PostgresDataMigrator) seedBatchState() error {
+func (p *PostgresDataMigrator) seedBatchState(ctx context.Context) error {
 	if p.snapshotTx == nil {
 		return fmt.Errorf("SeedBatchState called before CreateSnapshot")
 	}
@@ -235,14 +214,14 @@ func (p *PostgresDataMigrator) seedBatchState() error {
 			cols = append(cols, col.Name)
 		}
 
-		if err := p.persistBatchStatus(table, "pending", strings.Join(cols, ", "), 0, totalRows); err != nil {
+		if err := p.persistBatchStatus(ctx, table, "pending", strings.Join(cols, ", "), 0, totalRows); err != nil {
 			return fmt.Errorf("seeding batch state for %s: %w", table, err)
 		}
 	}
 	return nil
 }
 
-func (p *PostgresDataMigrator) Backfill() error {
+func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 	// go table by table (sorted order)
 	// start with your checkpoint (keyset pagination)
 	// get all that paginated data in memory
@@ -276,12 +255,12 @@ func (p *PostgresDataMigrator) Backfill() error {
 			}
 		}
 		for rowsDone < totalRows {
-			batch, err := p.resumeBackfill(table, rowsDone, indexColumnComma, lastVals)
+			batch, err := p.resumeBackfill(ctx, table, rowsDone, indexColumnComma, lastVals)
 			if err != nil {
 				return err
 			}
 			// writer encodes + writes to target + persists rows_done and last_index_values on success
-			lv, err := p.writer.Write(batch, p.colMap, indexColumns)
+			lv, err := p.writer.Write(ctx, batch, p.colMap, indexColumns)
 			if err != nil {
 				return err
 			}
@@ -289,14 +268,14 @@ func (p *PostgresDataMigrator) Backfill() error {
 			rowsDone += len(batch.Rows)
 		}
 
-		if err := p.markTableDone(table); err != nil {
+		if err := p.markTableDone(ctx, table); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p *PostgresDataMigrator) markTableDone(table string) error {
+func (p *PostgresDataMigrator) markTableDone(ctx context.Context, table string) error {
 	_, err := p.stateDb.Exec(
 		`UPDATE capture_batch_state SET status = 'done', updated_at = ? WHERE table_name = ?`,
 		time.Now().UTC().Format(time.RFC3339), table,
@@ -304,7 +283,7 @@ func (p *PostgresDataMigrator) markTableDone(table string) error {
 	return err
 }
 
-func (p *PostgresDataMigrator) decode(t schema.Type, raw any) (any, error) {
+func (p *PostgresDataMigrator) decode(ctx context.Context, t schema.Type, raw any) (any, error) {
 	switch t.(type) {
 	case schema.BoolType:
 		return raw, nil // postgres already gives u bool
@@ -326,7 +305,7 @@ func (p *PostgresDataMigrator) decode(t schema.Type, raw any) (any, error) {
 
 }
 
-func (p *PostgresDataMigrator) resumeBackfill(tableName string, rowsDone int, indexColumns string, lastVals []any) (*schema.Batch, error) {
+func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, tableName string, rowsDone int, indexColumns string, lastVals []any) (*schema.Batch, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -385,7 +364,7 @@ func (p *PostgresDataMigrator) resumeBackfill(tableName string, rowsDone int, in
 
 		for i, colName := range cols {
 			colType := p.colMap[tableName+colName]
-			decoded, err := p.decode(colType, rowValues[i])
+			decoded, err := p.decode(ctx, colType, rowValues[i])
 			if err != nil {
 				return nil, err
 			}
@@ -397,7 +376,7 @@ func (p *PostgresDataMigrator) resumeBackfill(tableName string, rowsDone int, in
 	return batch, rows.Err()
 }
 
-func (p *PostgresDataMigrator) persistBatchStatus(t string, s string, indexColumns string, rowsDone int, totalRows int) error {
+func (p *PostgresDataMigrator) persistBatchStatus(ctx context.Context, t string, s string, indexColumns string, rowsDone int, totalRows int) error {
 	indexName := p.tableIndex[t].Name
 	_, err := p.stateDb.Exec(
 		`INSERT INTO capture_batch_state (table_name, status, index_columns, last_index_values, index_name, rows_done, total_rows, updated_at)

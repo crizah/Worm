@@ -1,6 +1,7 @@
 package datawriter
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -15,7 +16,23 @@ type SQLiteDataMigrator struct {
 	stateDb  *sql.DB // same state db the migrator writes snapshot/batch state to
 }
 
-func (sq *SQLiteDataMigrator) Write(b *schema.Batch, colMap map[string]schema.Type, indexColumns []string) ([]any, error) {
+func NewSqliteDW(targetConn string, stateConn *sql.DB) (*SQLiteDataMigrator, error) {
+	db, err := sql.Open("sqlite3", targetConn)
+	if err != nil {
+		return nil, fmt.Errorf("opening db: %w", err)
+	}
+
+	// ping the connection string, or the db file
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("pinging db: %w", err)
+	}
+	return &SQLiteDataMigrator{
+		targetDb: db,
+		stateDb:  stateConn,
+	}, nil
+
+}
+func (sq *SQLiteDataMigrator) Write(ctx context.Context, b *schema.Batch, colMap map[string]schema.Type, indexColumns []string) ([]any, error) {
 	if len(b.Rows) == 0 {
 		return nil, nil
 	}
@@ -41,7 +58,7 @@ func (sq *SQLiteDataMigrator) Write(b *schema.Batch, colMap map[string]schema.Ty
 
 		for j, val := range row {
 			// encode back the data to sqlite format
-			encoded, err := sq.encode(colMap[b.Table+b.Columns[j]], val)
+			encoded, err := sq.encode(ctx, colMap[b.Table+b.Columns[j]], val)
 			if err != nil {
 				return nil, fmt.Errorf("encoding %s.%s: %w", b.Table, b.Columns[j], err)
 			}
@@ -96,7 +113,7 @@ func (sq *SQLiteDataMigrator) Write(b *schema.Batch, colMap map[string]schema.Ty
 	return lastVals, nil
 }
 
-func (sq *SQLiteDataMigrator) encode(t schema.Type, v any) (any, error) {
+func (sq *SQLiteDataMigrator) encode(ctx context.Context, t schema.Type, v any) (any, error) {
 	switch t.(type) {
 	case schema.BoolType:
 		if b, _ := v.(bool); b {

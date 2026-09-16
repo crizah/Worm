@@ -1,12 +1,14 @@
 package emitter
 
 import (
+	"context"
+
 	"github.com/crizah/Worm/schema"
 )
 
 type Emitter interface {
-	Emitt() ([]string, error)
-	writeFile(stmts []string) error // has to have this fnc, thats why its in an interface
+	Emitt(ctx context.Context, dir string, fileName string) ([]string, error) // the dir path and shit will be problem later on but thats for later lol
+	writeFile(stmts []string) error                                           // has to have this fnc, thats why its in an interface
 }
 
 func sortTables(tables []*schema.Table) []*schema.Table {
