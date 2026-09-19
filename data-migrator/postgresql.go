@@ -63,16 +63,7 @@ func getIndex(t *schema.Table) (*schema.Index, error) {
 	return nil, fmt.Errorf("Didnt find any valid index") // TODO: again, have this failure exist on inspecter phase itself
 }
 
-func NewPostgresDM(conn string, stateDb *sql.DB, sc []*schema.Table, limit int, w datawriter.DW) (*PostgresDataMigrator, error) {
-	// setup and ping postgres db
-	db, err := sql.Open("postgres", conn)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: connect: %w", err)
-	}
-	// ping
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("pinging postgres db: %w", err)
-	}
+func NewPostgresDM(db *sql.DB, conn string, stateDb *sql.DB, sc []*schema.Table, limit int, w datawriter.DW) (*PostgresDataMigrator, error) {
 	var t []string
 	var indexTable = make(map[string]*schema.Index) // maps table name to the index we use
 	cMap := make(map[string]schema.Type)
@@ -91,39 +82,7 @@ func NewPostgresDM(conn string, stateDb *sql.DB, sc []*schema.Table, limit int, 
 		indexTable[table.Name] = index
 	}
 
-	p := &PostgresDataMigrator{db: db, connStr: conn, tables: t, tableIndex: indexTable, limit: limit, colMap: cMap, writer: w}
-
-	p.stateDb = stateDb
-
-	// create the state tracking table for snapshots
-	_, err = p.stateDb.Exec(`
-		CREATE TABLE IF NOT EXISTS capture_snapshot_state (
-			slot_name   TEXT PRIMARY KEY,
-			snapshot_id TEXT NOT NULL,
-			lsn         TEXT NOT NULL,
-			created_at  TEXT NOT NULL
-		)
-	`)
-
-	// create the state tracking table for batches
-	// status tracks the status of the table itself, pending, in progress, done
-	// index_name contaisn the index we are using for this table
-	// index_columns contain comma seperated column names we use as int his index
-	// last_index_values stores comma seperated values in the form of a json blob {columnName1: last_value, columnName2: last_value}
-	// rows_done stores how many rows are finished for the table and total_rows contains total rows to do
-	// updated_at tracks last update on this table row
-	_, err = p.stateDb.Exec(`
-		CREATE TABLE IF NOT EXISTS capture_batch_state (
-		    table_name TEXT PRIMARY KEY,
-			status     TEXT,
-			index_columns TEXT,
-			last_index_values    TEXT,
-			index_name TEXT,
-			rows_done INTEGER,
-			total_rows INTEGER,
-			updated_at TIMESTAMP
-		)
-	`)
+	p := &PostgresDataMigrator{db: db, connStr: conn, tables: t, tableIndex: indexTable, limit: limit, colMap: cMap, writer: w, stateDb: stateDb}
 
 	return p, nil
 }
@@ -189,7 +148,7 @@ func (p *PostgresDataMigrator) CreateSnapshot(ctx context.Context) error {
 }
 
 func (p *PostgresDataMigrator) persistSnapshot(ctx context.Context) error {
-	_, err := p.stateDb.Exec(
+	_, err := p.stateDb.ExecContext(ctx,
 		`INSERT INTO capture_snapshot_state (slot_name, snapshot_id, lsn, created_at) VALUES (?, ?, ?, ?)`,
 		p.slotName, p.snapshotId, p.lsn.String(), time.Now().UTC().Format(time.RFC3339),
 	)
@@ -204,7 +163,7 @@ func (p *PostgresDataMigrator) seedBatchState(ctx context.Context) error {
 	for _, table := range p.tables {
 		var totalRows int
 		query := fmt.Sprintf("SELECT COUNT(*) FROM %s;", table)
-		if err := p.snapshotTx.QueryRow(query).Scan(&totalRows); err != nil {
+		if err := p.snapshotTx.QueryRowContext(ctx, query).Scan(&totalRows); err != nil {
 			return fmt.Errorf("counting rows in %s: %w", table, err)
 		}
 
@@ -240,7 +199,7 @@ func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 		var status string
 
 		q := `SELECT last_index_values, index_columns, rows_done, total_rows, status FROM capture_batch_state WHERE table_name = ?`
-		if err := p.stateDb.QueryRow(q, table).Scan(&lastValsJSON, &indexColumnComma, &rowsDone, &totalRows, &status); err != nil {
+		if err := p.stateDb.QueryRowContext(ctx, q, table).Scan(&lastValsJSON, &indexColumnComma, &rowsDone, &totalRows, &status); err != nil {
 			return fmt.Errorf("reading batch state for %s: %w", table, err)
 		}
 		if status == "done" {
@@ -276,7 +235,7 @@ func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 }
 
 func (p *PostgresDataMigrator) markTableDone(ctx context.Context, table string) error {
-	_, err := p.stateDb.Exec(
+	_, err := p.stateDb.ExecContext(ctx,
 		`UPDATE capture_batch_state SET status = 'done', updated_at = ? WHERE table_name = ?`,
 		time.Now().UTC().Format(time.RFC3339), table,
 	)
@@ -313,7 +272,7 @@ func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, tableName str
 		// this is the first page
 
 		// lock state db to have status = in_progress
-		if _, err := p.stateDb.Exec(
+		if _, err := p.stateDb.ExecContext(ctx,
 			`UPDATE capture_batch_state SET status = 'in_progress', updated_at = ? WHERE table_name = ?`,
 			time.Now().UTC().Format(time.RFC3339), tableName,
 		); err != nil {
@@ -378,7 +337,7 @@ func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, tableName str
 
 func (p *PostgresDataMigrator) persistBatchStatus(ctx context.Context, t string, s string, indexColumns string, rowsDone int, totalRows int) error {
 	indexName := p.tableIndex[t].Name
-	_, err := p.stateDb.Exec(
+	_, err := p.stateDb.ExecContext(ctx,
 		`INSERT INTO capture_batch_state (table_name, status, index_columns, last_index_values, index_name, rows_done, total_rows, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		t, s, indexColumns, "", indexName, rowsDone, totalRows, time.Now().UTC().Format(time.RFC3339),

@@ -8,6 +8,7 @@ import (
 
 	"github.com/crizah/Worm/querier"
 	"github.com/crizah/Worm/schema"
+	"github.com/crizah/Worm/utils"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -115,8 +116,12 @@ func init() {
 func TestPInspect(t *testing.T) {
 	godotenv.Load()
 	conn := os.Getenv("DB_CONN")
+	db, err := utils.PingDB(0, conn)
+	if err != nil {
+		t.Fatalf("pinging err %s", err.Error())
+	}
 
-	q, err := querier.NewPQuerier(conn)
+	q, err := querier.NewPQuerier(db)
 	if err != nil {
 		t.Fatalf("connecting: %v", err)
 	}

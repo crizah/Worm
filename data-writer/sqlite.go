@@ -16,16 +16,7 @@ type SQLiteDataMigrator struct {
 	stateDb  *sql.DB // same state db the migrator writes snapshot/batch state to
 }
 
-func NewSqliteDW(targetConn string, stateConn *sql.DB) (*SQLiteDataMigrator, error) {
-	db, err := sql.Open("sqlite3", targetConn)
-	if err != nil {
-		return nil, fmt.Errorf("opening db: %w", err)
-	}
-
-	// ping the connection string, or the db file
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("pinging db: %w", err)
-	}
+func NewSqliteDW(db *sql.DB, stateConn *sql.DB) (*SQLiteDataMigrator, error) {
 	return &SQLiteDataMigrator{
 		targetDb: db,
 		stateDb:  stateConn,

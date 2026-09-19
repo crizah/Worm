@@ -7,18 +7,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/crizah/Worm/utils"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
-// docker run --rm -d --name worm-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
-// psql "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" -f testdata/schema.sql
-
 func TestPostQuerier(t *testing.T) {
 	godotenv.Load()
 	conn := os.Getenv("DB_CONN")
+	db, err := utils.PingDB(0, conn)
+	if err != nil {
+		t.Fatalf("pinging err %s", err.Error())
+	}
 
-	q, err := NewPQuerier(conn)
+	q, err := NewPQuerier(db)
 	if err != nil {
 		t.Fatalf("connecting: %v", err)
 	}

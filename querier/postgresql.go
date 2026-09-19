@@ -2,7 +2,7 @@ package querier
 
 import (
 	"context"
-	"fmt"
+	"database/sql"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -11,14 +11,9 @@ type PostgresQuerier struct {
 	db *sqlx.DB
 }
 
-func NewPQuerier(conn string) (*PostgresQuerier, error) {
-	// ping at startup
-	db, err := sqlx.Connect("postgres", conn)
-	if err != nil {
-		return nil, fmt.Errorf("postgres: connect: %w", err)
-	}
-
-	p := &PostgresQuerier{db: db}
+func NewPQuerier(db *sql.DB) (*PostgresQuerier, error) {
+	sqlxDB := sqlx.NewDb(db, "postgres")
+	p := &PostgresQuerier{db: sqlxDB}
 	return p, nil
 
 }

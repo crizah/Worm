@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -17,43 +16,15 @@ import (
 )
 
 type SchemaMigrator struct {
-	connStr       string
 	migrationFile string
 	dialect       schema.Dialect
 	db            *sql.DB
 	mu            sync.Mutex // one migration at a time per migrator
 }
 
-func NewSchemaMigrator(c string, d schema.Dialect, m string) (*SchemaMigrator, error) {
-
-	if d == schema.SqliteDialect {
-		// if db file doesnt exist, make one with that fileName
-		if _, err := os.Stat(c); os.IsNotExist(err) {
-
-			if err := os.MkdirAll(filepath.Dir(c), 0755); err != nil {
-				return nil, fmt.Errorf("creating directory: %w", err)
-			}
-
-			f, err := os.Create(c)
-			if err != nil {
-				return nil, fmt.Errorf("creating sqlite db file: %w", err)
-			}
-			f.Close()
-		}
-	}
-
-	db, err := sql.Open(schema.DriverName(d), c)
-	if err != nil {
-		return nil, fmt.Errorf("opening db: %w", err)
-	}
-
-	// ping the connection string, or the db file
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("pinging db: %w", err)
-	}
+func NewSchemaMigrator(db *sql.DB, d schema.Dialect, m string) (*SchemaMigrator, error) {
 
 	return &SchemaMigrator{
-		connStr:       c,
 		migrationFile: m,
 		dialect:       d,
 		db:            db,

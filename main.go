@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/crizah/Worm/querier"
 	"github.com/crizah/Worm/schema"
 	schemamigrator "github.com/crizah/Worm/schema-migrator"
+	"github.com/crizah/Worm/utils"
 	"github.com/joho/godotenv"
 )
 
@@ -41,6 +41,7 @@ func main() {
 		log.Fatalf("empty connection string for source db")
 		return
 	}
+
 	sConnD := schema.ResolveDialect(sourceDbConn)
 	if sConnD != sourceDialect {
 		log.Fatalf("type mismatch, source db of type %d, conn str of type %d", sourceDialect, sConnD)
@@ -81,18 +82,72 @@ func main() {
 		f.Close()
 	}
 
-	stateDb, err := sql.Open("sqlite3", stateDbPath)
+	stateDb, err := utils.PingDB(1, stateDbPath)
 	if err != nil {
-		log.Fatalf("opening db: %s", err.Error())
+		log.Fatalf("error reaching state db: %s", err.Error())
 		return
 	}
+
+	// set up the tables in stateDb
+
+	// create the state tracking table for snapshots
+	_, err = stateDb.Exec(`
+		CREATE TABLE IF NOT EXISTS capture_snapshot_state (
+			slot_name   TEXT PRIMARY KEY,
+			snapshot_id TEXT NOT NULL,
+			lsn         TEXT NOT NULL,
+			created_at  TEXT NOT NULL
+		)
+	`)
+	if err != nil {
+		log.Fatalf("error creating state db table: %s", err.Error())
+	}
+
+	// create the state tracking table for batches
+	// status tracks the status of the table itself, pending, in progress, done
+	// index_name contaisn the index we are using for this table
+	// index_columns contain comma seperated column names we use as int his index
+	// last_index_values stores comma seperated values in the form of a json blob {columnName1: last_value, columnName2: last_value}
+	// rows_done stores how many rows are finished for the table and total_rows contains total rows to do
+	// updated_at tracks last update on this table row
+	_, err = stateDb.Exec(`
+		CREATE TABLE IF NOT EXISTS capture_batch_state (
+		    table_name TEXT PRIMARY KEY,
+			status     TEXT,
+			index_columns TEXT,
+			last_index_values    TEXT,
+			index_name TEXT,
+			rows_done INTEGER,
+			total_rows INTEGER,
+			updated_at TIMESTAMP
+		)
+	`)
+
+	if err != nil {
+		log.Fatalf("error creating state db table: %s", err.Error())
+	}
+
+	sourceDb, err := utils.PingDB(sourceDialect, sourceDbConn)
+	if err != nil {
+		log.Fatalf("error reaching source db: %s", err.Error())
+		return
+	}
+	targetDb, err := utils.PingDB(targetDialect, targetDbConn)
+	if err != nil {
+		log.Fatalf("error reaching target db: %s", err.Error())
+		return
+	}
+
+	// migration file
+	dir := "./.data/"
+	fileName := fmt.Sprintf("%s-migration.sql", schema.DbName)
 
 	// querier -> inspecter -> emitter -> schema-migrater
 	switch sourceDialect {
 	case 0:
 		// postgres
 		// querier
-		q, err := querier.NewPQuerier(sourceDbConn) // pings the db
+		q, err := querier.NewPQuerier(sourceDb) // pings the db
 		if err != nil {
 			log.Fatalf("connecting: %s", err.Error())
 			return
@@ -114,14 +169,13 @@ func main() {
 
 	// emitter is interface independent, and so is schema migrater
 	emm := emitter.NewSqlEmitter(schema)
-	dir := "./.data/"
-	fileName := fmt.Sprintf("%s-migration.sql", schema.DbName)
+
 	_, err = emm.Emitt(ctx, dir, fileName)
 	if err != nil {
 		log.Fatalf("error emitting %s", err.Error())
 		return
 	}
-	sm, err := schemamigrator.NewSchemaMigrator(targetDbConn, targetDialect, dir+fileName)
+	sm, err := schemamigrator.NewSchemaMigrator(targetDb, targetDialect, dir+fileName)
 	if err != nil {
 		log.Fatalf("error creating schema migrater %s", err.Error())
 		return
@@ -139,16 +193,11 @@ func main() {
 	var dataMigrater datamigrator.DM
 	var dataWriter datawriter.DW
 
-	// ping  db file
-	if err := stateDb.Ping(); err != nil {
-		log.Fatalf("pinging sqlDb: %s", err.Error())
-		return
-	}
 	switch targetDialect {
 	case 0:
 	// postgres
 	case 1:
-		dataWriter, err = datawriter.NewSqliteDW(targetDbConn, stateDb)
+		dataWriter, err = datawriter.NewSqliteDW(targetDb, stateDb)
 		if err != nil {
 			log.Fatalf("error making datawriter %s", err.Error())
 			return
@@ -158,7 +207,7 @@ func main() {
 	switch sourceDialect {
 	case 0:
 		// postgres
-		dataMigrater, err = datamigrator.NewPostgresDM(sourceDbConn, stateDb, schema.Tables, 500, dataWriter)
+		dataMigrater, err = datamigrator.NewPostgresDM(sourceDb, stateDb, schema.Tables, 500, dataWriter)
 	case 1:
 		// sqlite
 	}
