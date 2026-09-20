@@ -8,6 +8,7 @@ import (
 
 	"github.com/crizah/Worm/inspect"
 	"github.com/crizah/Worm/querier"
+	"github.com/crizah/Worm/utils"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -25,8 +26,11 @@ var expectedStatements = []string{
 func TestSqLiteEmitter(t *testing.T) {
 	godotenv.Load()
 	conn := os.Getenv("DB_CONN")
-
-	q, err := querier.NewPQuerier(conn)
+	db, err := utils.PingDB(1, conn)
+	if err != nil {
+		t.Fatalf("pinging err %s", err.Error())
+	}
+	q, err := querier.NewPQuerier(db)
 	if err != nil {
 		t.Fatalf("connecting: %v", err)
 	}

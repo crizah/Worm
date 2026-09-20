@@ -207,7 +207,7 @@ func main() {
 	switch sourceDialect {
 	case 0:
 		// postgres
-		dataMigrater, err = datamigrator.NewPostgresDM(sourceDb, stateDb, schema.Tables, 500, dataWriter)
+		dataMigrater, err = datamigrator.NewPostgresDM(sourceDb, sourceDbConn, stateDb, schema.Tables, 500, dataWriter)
 	case 1:
 		// sqlite
 	}

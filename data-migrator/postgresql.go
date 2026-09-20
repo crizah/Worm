@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/crizah/Worm/schema"
 	"github.com/jackc/pglogrepl"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgproto3"
 )
 
 type PostgresDataMigrator struct {
@@ -188,9 +190,6 @@ func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 	// hand it off to the writer, which encodes + writes + persists its own checkpoint on success
 	// continue by moving to the next page using the cursor the writer just confirmed
 
-	// TODO: see if we have a valid replication connection, if not, make one and re add all the voletile things
-	// like tables, colMap, etc
-
 	for _, table := range p.tables {
 		var lastValsJSON string
 		var indexColumnComma string
@@ -218,8 +217,9 @@ func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			batch.IndexColumns = indexColumns
 			// writer encodes + writes to target + persists rows_done and last_index_values on success
-			lv, err := p.writer.Write(ctx, batch, p.colMap, indexColumns)
+			lv, err := p.writer.Write(ctx, batch, p.colMap, 1)
 			if err != nil {
 				return err
 			}
@@ -234,6 +234,183 @@ func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 	return nil
 }
 
+func (p *PostgresDataMigrator) StreamData(ctx context.Context) error {
+	// takes a replConn (doesnt have to be the same one as the backfill)
+	// read the last recorded lns from state db
+	// do a START_REPLICATION SLOT <slotName> LOGICAL <lsn>
+	var slotName string
+	var lsn string
+	q := `SELECT slot_name, lsn FROM capture_snapshot_stage`
+	if err := p.stateDb.QueryRowContext(ctx, q).Scan(&slotName, &lsn); err != nil {
+		return fmt.Errorf("reading lsn state : %s", err.Error())
+	}
+
+	// resue the same replConn
+	if p.replConn.IsClosed() {
+		// TODO: make a new one
+	}
+
+	startLSN, err := pglogrepl.ParseLSN(lsn)
+	if err != nil {
+		return fmt.Errorf("parsing lsn %q: %w", lsn, err)
+	}
+
+	err = pglogrepl.StartReplication(ctx, p.replConn, slotName, startLSN, pglogrepl.StartReplicationOptions{
+		Mode: pglogrepl.LogicalReplication,
+		PluginArgs: []string{
+			"proto_version '1'",
+			"publication_names 'worm_pub'", // TODO: this publication doesn't get created anywhere yet - pgoutput will fail without it existing first
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("starting replication: %w", err)
+	}
+
+	relations := map[uint32]*pglogrepl.RelationMessage{}
+	receivedLSN := startLSN
+	nextStandbyUpdate := time.Now().Add(10 * time.Second)
+
+	for {
+		if time.Now().After(nextStandbyUpdate) {
+			if err := pglogrepl.SendStandbyStatusUpdate(ctx, p.replConn, pglogrepl.StandbyStatusUpdate{WALWritePosition: receivedLSN}); err != nil {
+				return fmt.Errorf("sending standby status update: %w", err)
+			}
+			nextStandbyUpdate = time.Now().Add(10 * time.Second)
+		}
+
+		recvCtx, cancel := context.WithDeadline(ctx, nextStandbyUpdate)
+		rawMsg, err := p.replConn.ReceiveMessage(recvCtx)
+		cancel()
+		if err != nil {
+			if pgconn.Timeout(err) {
+				continue // just means its time to loop around and send a standby status update
+			}
+			return fmt.Errorf("receiving replication message: %w", err)
+		}
+
+		cd, ok := rawMsg.(*pgproto3.CopyData)
+		if !ok {
+			continue // notices/other protocol chatter we dont care about
+		}
+		if len(cd.Data) == 0 {
+			continue
+		}
+
+		switch cd.Data[0] {
+		case 'k': // primary keepalive
+			pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(cd.Data[1:])
+			if err != nil {
+				return fmt.Errorf("parsing keepalive: %w", err)
+			}
+			if pkm.ReplyRequested {
+				nextStandbyUpdate = time.Time{} // force a status update on the next loop iteration
+			}
+
+		case 'w': // XLogData - an actual change
+			xld, err := pglogrepl.ParseXLogData(cd.Data[1:])
+			if err != nil {
+				return fmt.Errorf("parsing xlog data: %w", err)
+			}
+			receivedLSN = xld.WALStart
+
+			msg, err := pglogrepl.Parse(xld.WALData)
+			if err != nil {
+				return fmt.Errorf("parsing pgoutput message: %w", err)
+			}
+
+			switch m := msg.(type) {
+			case *pglogrepl.RelationMessage:
+				// pgoutput sends one of these before the first change on a relation,
+				// and again whenever that relation's shape changes - cache it, every
+				// insert/update/delete after this only carries the relation's ID.
+				relations[m.RelationID] = m
+
+			case *pglogrepl.InsertMessage:
+				rel, ok := relations[m.RelationID]
+				if !ok {
+					return fmt.Errorf("insert for unknown relation id %d - missing Relation message", m.RelationID)
+				}
+				batch, err := p.decodeTuple(rel, m.Tuple)
+				if err != nil {
+					return fmt.Errorf("decoding insert on %s: %w", rel.RelationName, err)
+				}
+				batch.IndexColumns = indexColumnsFor(p.tableIndex[rel.RelationName])
+				// a genuine new row inserted twice (e.g. after a resume) has the same PK
+				// both times, so INSERT OR IGNORE's idempotency is exactly what we want here too
+				if _, err := p.writer.Write(ctx, batch, p.colMap, 1); err != nil {
+					return fmt.Errorf("writing streamed insert for %s: %w", rel.RelationName, err)
+				}
+
+			case *pglogrepl.UpdateMessage, *pglogrepl.DeleteMessage:
+				// TODO: get the actual prev values and do an update or delete
+			case *pglogrepl.CommitMessage:
+				if err := p.persistStreamLSN(m.CommitLSN); err != nil {
+					return fmt.Errorf("persisting stream lsn: %w", err)
+				}
+			}
+		}
+	}
+}
+
+// decodeTuple turns one pgoutput tuple into a single-row Batch, decoding pgoutput's
+// text-format column values per the column's normalized schema.Type. This is a
+// different decode path from p.decode() - that one handles values already typed by
+// lib/pq's driver (bool, time.Time, ...), these arrive as raw text bytes instead.
+func (p *PostgresDataMigrator) decodeTuple(rel *pglogrepl.RelationMessage, tuple *pglogrepl.TupleData) (*schema.Batch, error) {
+	cols := make([]string, len(rel.Columns))
+	row := make([]any, len(rel.Columns))
+
+	for i, col := range tuple.Columns {
+		colName := rel.Columns[i].Name
+		cols[i] = colName
+
+		switch col.DataType {
+		case 'n': // null
+			row[i] = nil
+		case 'u': // unchanged toast value - not sent, nothing we can do but leave it nil
+			row[i] = nil
+		case 't': // text-formatted value
+			decoded, err := p.decodeText(p.colMap[rel.RelationName+colName], col.Data)
+			if err != nil {
+				return nil, err
+			}
+			row[i] = decoded
+		}
+	}
+
+	return &schema.Batch{
+		Table:   rel.RelationName,
+		Columns: cols,
+		Rows:    [][]any{row},
+	}, nil
+}
+
+func (p *PostgresDataMigrator) decodeText(t schema.Type, raw []byte) (any, error) {
+	s := string(raw)
+	switch t.(type) {
+	case schema.BoolType:
+		return s == "t", nil
+	case schema.IntegerType:
+		return strconv.ParseInt(s, 10, 64)
+	case schema.TimeType:
+		return time.Parse("2006-01-02 15:04:05.999999-07", s)
+	default: // uuid/text/enum/json are already fine as strings
+		return s, nil
+	}
+}
+
+func indexColumnsFor(idx *schema.Index) []string {
+	names := make([]string, len(idx.Columns))
+	for i, c := range idx.Columns {
+		names[i] = c.Name
+	}
+	return names
+}
+
+func (p *PostgresDataMigrator) persistStreamLSN(lsn pglogrepl.LSN) error {
+	_, err := p.stateDb.Exec(`UPDATE capture_snapshot_stage SET lsn = ? WHERE slot_name = ?`, lsn.String(), p.slotName)
+	return err
+}
 func (p *PostgresDataMigrator) markTableDone(ctx context.Context, table string) error {
 	_, err := p.stateDb.ExecContext(ctx,
 		`UPDATE capture_batch_state SET status = 'done', updated_at = ? WHERE table_name = ?`,

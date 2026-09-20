@@ -101,7 +101,9 @@ func (e MethodExpr) expr() {}
 
 // batch struct that stores each batch value data
 type Batch struct {
-	Table   string
-	Columns []string
-	Rows    [][]any // ordered index with ith value in inner loop corresponding to ith column
+	Table        string
+	Columns      []string
+	Rows         [][]any  // ordered index with ith value in inner loop corresponding to ith column
+	IndexColumns []string // names of columns that are Indexes
+	PrevVals     [][]any  // the previous vals on indexes for every row, in order with IndexColumns
 }

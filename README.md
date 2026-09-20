@@ -97,4 +97,6 @@ https://www.citusdata.com/blog/2016/03/30/five-ways-to-paginate/
      `WHERE (col1, col2) > ($1, $2) ORDER BY col1, col2 LIMIT N`
      - we store the last read column/columns ids/values in out state table, per batch, after writing to the target db
      - on resume, we pick up from there itself
-- after everything is comitted to target db, we can move to the next snapshot and repeat process until both the dbs are synced
+- after everything is comitted to target db from that current snapshot, we start streaming (create a new replConn or reuse existing, and track state via the lns)
+- for resume, if we were to resume the backfill itself, just start reading from live db, using the per table checkpoints in the stateDb
+- if we want to resume streaming, we use the other table in the stateDb, that tracks the lsn
