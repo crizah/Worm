@@ -259,7 +259,7 @@ func (p *PostgresDataMigrator) StreamData(ctx context.Context) error {
 		Mode: pglogrepl.LogicalReplication,
 		PluginArgs: []string{
 			"proto_version '1'",
-			"publication_names 'worm_pub'", // TODO: this publication doesn't get created anywhere yet - pgoutput will fail without it existing first
+			"publication_names 'worm_pub'", // TODO: this publication doesn't get created anywhere yet, do it in the migrate function, before starting streaming
 		},
 	})
 	if err != nil {
@@ -335,14 +335,51 @@ func (p *PostgresDataMigrator) StreamData(ctx context.Context) error {
 					return fmt.Errorf("decoding insert on %s: %w", rel.RelationName, err)
 				}
 				batch.IndexColumns = indexColumnsFor(p.tableIndex[rel.RelationName])
-				// a genuine new row inserted twice (e.g. after a resume) has the same PK
-				// both times, so INSERT OR IGNORE's idempotency is exactly what we want here too
 				if _, err := p.writer.Write(ctx, batch, p.colMap, 1); err != nil {
 					return fmt.Errorf("writing streamed insert for %s: %w", rel.RelationName, err)
 				}
 
-			case *pglogrepl.UpdateMessage, *pglogrepl.DeleteMessage:
-				// TODO: get the actual prev values and do an update or delete
+			case *pglogrepl.UpdateMessage:
+				rel, ok := relations[m.RelationID]
+				if !ok {
+					return fmt.Errorf("update for unknown relation id %d - missing Relation message", m.RelationID)
+				}
+				batch, err := p.decodeTuple(rel, m.NewTuple)
+				if err != nil {
+					return fmt.Errorf("decoding update on %s: %w", rel.RelationName, err)
+				}
+				batch.IndexColumns = indexColumnsFor(p.tableIndex[rel.RelationName])
+
+				prevVals, err := p.prevIndexValues(rel, batch.IndexColumns, m.OldTuple, batch)
+				if err != nil {
+					return fmt.Errorf("resolving prev values for update on %s: %w", rel.RelationName, err)
+				}
+				batch.PrevVals = [][]any{prevVals}
+
+				if _, err := p.writer.Write(ctx, batch, p.colMap, 2); err != nil {
+					return fmt.Errorf("writing streamed update for %s: %w", rel.RelationName, err)
+				}
+
+			case *pglogrepl.DeleteMessage:
+				rel, ok := relations[m.RelationID]
+				if !ok {
+					return fmt.Errorf("delete for unknown relation id %d - missing Relation message", m.RelationID)
+				}
+				indexColumns := indexColumnsFor(p.tableIndex[rel.RelationName])
+
+				prevVals, err := p.prevIndexValues(rel, indexColumns, m.OldTuple, nil)
+				if err != nil {
+					return fmt.Errorf("resolving prev values for delete on %s: %w", rel.RelationName, err)
+				}
+				batch := &schema.Batch{
+					Table:        rel.RelationName,
+					IndexColumns: indexColumns,
+					PrevVals:     [][]any{prevVals},
+				}
+				if _, err := p.writer.Write(ctx, batch, p.colMap, 3); err != nil {
+					return fmt.Errorf("writing streamed delete for %s: %w", rel.RelationName, err)
+				}
+
 			case *pglogrepl.CommitMessage:
 				if err := p.persistStreamLSN(m.CommitLSN); err != nil {
 					return fmt.Errorf("persisting stream lsn: %w", err)
@@ -352,10 +389,6 @@ func (p *PostgresDataMigrator) StreamData(ctx context.Context) error {
 	}
 }
 
-// decodeTuple turns one pgoutput tuple into a single-row Batch, decoding pgoutput's
-// text-format column values per the column's normalized schema.Type. This is a
-// different decode path from p.decode() - that one handles values already typed by
-// lib/pq's driver (bool, time.Time, ...), these arrive as raw text bytes instead.
 func (p *PostgresDataMigrator) decodeTuple(rel *pglogrepl.RelationMessage, tuple *pglogrepl.TupleData) (*schema.Batch, error) {
 	cols := make([]string, len(rel.Columns))
 	row := make([]any, len(rel.Columns))
@@ -397,6 +430,82 @@ func (p *PostgresDataMigrator) decodeText(t schema.Type, raw []byte) (any, error
 	default: // uuid/text/enum/json are already fine as strings
 		return s, nil
 	}
+}
+
+// prevIndexValues returns the row's index-column values as they were BEFORE this
+// change. Postgres only sends oldTuple when a replica identity column actually
+// changed - if it's nil, the identity didn't move, so the values already decoded
+// onto newBatch (the current/new row) are also the old ones
+func (p *PostgresDataMigrator) prevIndexValues(rel *pglogrepl.RelationMessage, indexColumns []string, oldTuple *pglogrepl.TupleData, newBatch *schema.Batch) ([]any, error) {
+	if oldTuple != nil {
+		oldBatch, err := p.decodeOldTuple(rel, oldTuple)
+		if err != nil {
+			return nil, err
+		}
+		return valuesFor(indexColumns, oldBatch.Columns, oldBatch.Rows[0]), nil
+	}
+
+	if newBatch == nil {
+		return nil, fmt.Errorf("no old tuple and no new tuple to fall back to for %s", rel.RelationName)
+	}
+	return valuesFor(indexColumns, newBatch.Columns, newBatch.Rows[0]), nil
+}
+
+// when lengths differ, match against whichever of rel.Columns are flagged as key columns instead.
+// NOTE: assumes bit 0 of RelationMessageColumn.Flags marks a key column
+func (p *PostgresDataMigrator) decodeOldTuple(rel *pglogrepl.RelationMessage, tuple *pglogrepl.TupleData) (*schema.Batch, error) {
+	relCols := rel.Columns
+	if len(tuple.Columns) != len(rel.Columns) {
+		var keyCols []*pglogrepl.RelationMessageColumn
+		for _, c := range rel.Columns {
+			if c.Flags&1 != 0 {
+				keyCols = append(keyCols, c)
+			}
+		}
+		relCols = keyCols
+	}
+	if len(tuple.Columns) != len(relCols) {
+		return nil, fmt.Errorf("old tuple on %s has %d columns, expected %d key columns", rel.RelationName, len(tuple.Columns), len(relCols))
+	}
+
+	cols := make([]string, len(relCols))
+	row := make([]any, len(relCols))
+	for i, col := range tuple.Columns {
+		colName := relCols[i].Name
+		cols[i] = colName
+
+		switch col.DataType {
+		case 'n':
+			row[i] = nil
+		case 'u':
+			row[i] = nil
+		case 't':
+			decoded, err := p.decodeText(p.colMap[rel.RelationName+colName], col.Data)
+			if err != nil {
+				return nil, err
+			}
+			row[i] = decoded
+		}
+	}
+
+	return &schema.Batch{
+		Table:   rel.RelationName,
+		Columns: cols,
+		Rows:    [][]any{row},
+	}, nil
+}
+
+// valuesFor pulls the values at `names` out of `row`, matching by column name.
+func valuesFor(names []string, columns []string, row []any) []any {
+	pos := make(map[string]int, len(columns))
+	for i, c := range columns {
+		pos[c] = i
+	}
+	vals := make([]any, len(names))
+	for i, n := range names {
+		vals[i] = row[pos[n]]
+	}
+	return vals
 }
 
 func indexColumnsFor(idx *schema.Index) []string {
