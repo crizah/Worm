@@ -20,9 +20,6 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 
 - use batch processing, read n rows, maintain pagination, write those n rows
 - MAKE IT RESUMABLE, shouldnt loose data midway through (probably an sqlite table for that)
-- verification
-- locks need ot be maintained
-
 
 # done so far:
 - querier that JUST qieries the postgres connection
@@ -34,15 +31,27 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 cleaning up the data migrater code and makin the global function
 
 # TODO:
+- make the backfill function work concurrently 
+
+design for that:
+- we need to change sort tables to be in levels, level 1: all tables with degrees 0, level 2: all dependedt tables in order
+- process the level 0 tables concurrently 
+- for the level 1 table,s concurrency can be done only within the table itself 
+- instead of tracking the pagination with a rolling cursor, get the range of the pk/unique columns, and split her up n ways
+- have each go routine work on each chunk
+- change the state table to store with chunk_id (make sure the actual chunk size never changes. i.e: chunk id always maps to the same range of rows in the given snapshot)
+- have a pool of *sql.Tx 
+- the resume plan stays as is 
+- note on this: sqlite doesnt support mutiple writes, so the parellalism would need to work in 2 chunks, always have the reads concurrent, but depending on the target, the writes can or cannot be concurrent
+
+
 flag to the user if a table doesnt have a unique index, or dont have a unique index where all columns are non nullable, fail this in the inspecter stage itself
-- get rid of like pinging at every step lol, ping once
 
 # Next
 - add resume to migrater (establish connection again and load everything back into memeory)
 - increase limit for reads, but fir writes (especially for sqlite), fit to the limitations of that db (999 for sqlite)
-- do the actual looping to get the next snapshot
 - test the migrater
-- capture every stage of the pipeline in the state db, so we can resume from scratch (low priority)
+- make the cli
 
 
 # missed/gaps:
