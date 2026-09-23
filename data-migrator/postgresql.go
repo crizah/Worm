@@ -162,6 +162,7 @@ func (p *PostgresDataMigrator) seedBatchState(ctx context.Context) error {
 		return fmt.Errorf("SeedBatchState called before CreateSnapshot")
 	}
 
+	// TODO: this is an n+1 query, fix that at some point(have the goroutunes from the pool (soon to cum) pick them up)
 	for _, table := range p.tables {
 		var totalRows int
 		query := fmt.Sprintf("SELECT COUNT(*) FROM %s;", table)
@@ -182,7 +183,62 @@ func (p *PostgresDataMigrator) seedBatchState(ctx context.Context) error {
 	return nil
 }
 
-func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
+func (p *PostgresDataMigrator) checkPendingTables(ctx context.Context) ([]string, error) {
+	// queries the state db to see if any tables are still not in dont status, if they are, adds name to list and returns
+	// TODO: this is an n+1 query, fix that at some point(have the goroutunes from the pool (soon to cum) pick them up)
+
+	var ans []string
+	for _, table := range p.tables {
+		var status string
+		q := fmt.Sprintf("SELECT status FROM capture_batch_state WHERE table_name='%s'", table)
+		if err := p.stateDb.QueryRowContext(ctx, q).Scan(&status); err != nil {
+			return nil, err
+		}
+		if status != "done" {
+			ans = append(ans, table)
+
+		}
+	}
+	return ans, nil
+}
+
+func (p *PostgresDataMigrator) Migrate(ctx context.Context) error {
+	// this is also a one time call thing, right after creat snapshot, snapshot and connection is still valid
+	if err := p.backfill(ctx, p.snapshotTx); err != nil {
+		return fmt.Errorf("backfilling: %w", err)
+	}
+	if err := p.streamData(ctx, p.replConn); err != nil {
+		return fmt.Errorf("streaming: %w", err)
+	}
+	return nil
+}
+
+func (p *PostgresDataMigrator) Resume(ctx context.Context) error {
+	// the function that wraps this will have to make new struct again and rebuild schema every time.
+	// TODO: store that in the state db as well
+	// checks the pending tables to determine of this is resume on backfill or streaming
+	tables, err := p.checkPendingTables(ctx)
+	if err != nil {
+		return fmt.Errorf("checking pending tables: %w", err)
+	}
+	if len(tables) != 0 {
+		if err := p.backfill(ctx, p.db); err != nil { // calling backfill here is a shitty choice, since it queries all the tables again.
+			// fix that at some point again
+			// also, passing the conn string here cos() its reused to work on both live db and snapshot
+			return fmt.Errorf("backfilling: %w", err)
+		}
+	}
+	if err := p.streamData(ctx, nil); err != nil { // stream data opens its new replConn
+		return fmt.Errorf("streaming: %w", err)
+	}
+	return nil
+}
+
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func (p *PostgresDataMigrator) backfill(ctx context.Context, conn queryer) error {
 	// go table by table (sorted order)
 	// start with your checkpoint (keyset pagination)
 	// get all that paginated data in memory
@@ -213,7 +269,7 @@ func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 			}
 		}
 		for rowsDone < totalRows {
-			batch, err := p.resumeBackfill(ctx, table, rowsDone, indexColumnComma, lastVals)
+			batch, err := p.resumeBackfill(ctx, conn, table, rowsDone, indexColumnComma, lastVals)
 			if err != nil {
 				return err
 			}
@@ -234,9 +290,8 @@ func (p *PostgresDataMigrator) Backfill(ctx context.Context) error {
 	return nil
 }
 
-func (p *PostgresDataMigrator) StreamData(ctx context.Context) error {
-	// takes a replConn (doesnt have to be the same one as the backfill)
-	// read the last recorded lns from state db
+func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgConn) error {
+	// read the last recorded lsn from state db
 	// do a START_REPLICATION SLOT <slotName> LOGICAL <lsn>
 	var slotName string
 	var lsn string
@@ -245,9 +300,21 @@ func (p *PostgresDataMigrator) StreamData(ctx context.Context) error {
 		return fmt.Errorf("reading lsn state : %s", err.Error())
 	}
 
-	// resue the same replConn
-	if p.replConn.IsClosed() {
-		// TODO: make a new one
+	if conn != nil {
+		p.replConn = conn
+	}
+	if p.replConn == nil || p.replConn.IsClosed() {
+		// make a new one
+		cfg, err := pgconn.ParseConfig(p.connStr)
+		if err != nil {
+			return fmt.Errorf("parsing connection string: %w", err)
+		}
+		cfg.RuntimeParams["replication"] = "database"
+		replConn, err := pgconn.ConnectConfig(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("opening replication connection: %w", err)
+		}
+		p.replConn = replConn
 	}
 
 	startLSN, err := pglogrepl.ParseLSN(lsn)
@@ -550,7 +617,7 @@ func (p *PostgresDataMigrator) decode(ctx context.Context, t schema.Type, raw an
 
 }
 
-func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, tableName string, rowsDone int, indexColumns string, lastVals []any) (*schema.Batch, error) {
+func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, q queryer, tableName string, rowsDone int, indexColumns string, lastVals []any) (*schema.Batch, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -566,7 +633,7 @@ func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, tableName str
 		}
 
 		query := fmt.Sprintf("SELECT * FROM %s ORDER BY %s ASC LIMIT %d", tableName, indexColumns, p.limit)
-		rows, err = p.snapshotTx.Query(query)
+		rows, err = q.QueryContext(ctx, query)
 	} else {
 		// otherwise, make a query with pagination with lastVals
 		var placeholders string
@@ -578,7 +645,7 @@ func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, tableName str
 		}
 		query := fmt.Sprintf("SELECT * FROM %s WHERE (%s) > (%s) ORDER BY %s LIMIT %d",
 			tableName, indexColumns, placeholders, indexColumns, p.limit)
-		rows, err = p.snapshotTx.Query(query, lastVals...)
+		rows, err = q.QueryContext(ctx, query, lastVals...)
 	}
 	if err != nil {
 		return nil, err
