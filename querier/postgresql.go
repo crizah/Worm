@@ -18,10 +18,10 @@ func NewPQuerier(db *sql.DB) (*PostgresQuerier, error) {
 
 }
 
-func executeSelect[T any](db *sqlx.DB, query string, schemaName string) ([]T, error) {
+func executeSelect[T any](ctx context.Context, db *sqlx.DB, query string, schemaName string) ([]T, error) {
 	// generics cant me methods unless struct itself is generic
 	var ans []T
-	if err := db.Select(&ans, query, schemaName); err != nil {
+	if err := db.SelectContext(ctx, &ans, query, schemaName); err != nil {
 		return nil, err
 	}
 	return ans, nil
@@ -51,7 +51,7 @@ func (p *PostgresQuerier) Indexes(ctx context.Context) ([]IndexRow, error) {
   WHERE n.nspname = $1
   ORDER BY tc.relname, ic.relname, ord.ordpos;
 	`
-	ans, err := executeSelect[IndexRow](p.db, exec, "public")
+	ans, err := executeSelect[IndexRow](ctx, p.db, exec, "public")
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (p *PostgresQuerier) Columns(ctx context.Context) ([]ColumnRow, error) {
   ORDER BY table_name, ordinal_position;
 	`
 	// udt_name is enum name when data_type is USER DEFINED
-	ans, err := executeSelect[ColumnRow](p.db, exec, "public") // hardcoded for now
+	ans, err := executeSelect[ColumnRow](ctx, p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (p *PostgresQuerier) Tables(ctx context.Context) ([]string, error) {
 		ORDER BY table_name;
 		`
 
-	ans, err := executeSelect[string](p.db, exec, "public") // hardcoded for now
+	ans, err := executeSelect[string](ctx, p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
@@ -97,13 +97,13 @@ func (p *PostgresQuerier) Tables(ctx context.Context) ([]string, error) {
 func (p *PostgresQuerier) DbName(ctx context.Context) (string, error) {
 	exec := "SELECT catalog_name as db_name from information_schema.information_schema_catalog_name"
 	var ans string
-	if err := p.db.Get(&ans, exec); err != nil {
-		return "", nil
+	if err := p.db.GetContext(ctx, &ans, exec); err != nil {
+		return "", err
 	}
 	return ans, nil
 }
 
-func (p *PostgresQuerier) Constraints(cts context.Context) ([]ConstraintRow, error) {
+func (p *PostgresQuerier) Constraints(ctx context.Context) ([]ConstraintRow, error) {
 	exec := `
  SELECT tc.table_name, tc.constraint_name, tc.constraint_type,
          kcu.column_name, kcu.ordinal_position
@@ -116,7 +116,7 @@ func (p *PostgresQuerier) Constraints(cts context.Context) ([]ConstraintRow, err
 
 	`
 
-	ans, err := executeSelect[ConstraintRow](p.db, exec, "public") // hardcoded for now
+	ans, err := executeSelect[ConstraintRow](ctx, p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (p *PostgresQuerier) ForeignKeys(ctx context.Context) ([]FkRow, error) {
   WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1
   ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position;
 `
-	ans, err := executeSelect[FkRow](p.db, exec, "public") // hardcoded for now
+	ans, err := executeSelect[FkRow](ctx, p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (p *PostgresQuerier) Enums(ctx context.Context) (map[string][]string, error
  WHERE n.nspname = $1
  ORDER BY t.typname, e.enumsortorder;
 `
-	rows, err := executeSelect[EnumRow](p.db, exec, "public") // hardcoded for now
+	rows, err := executeSelect[EnumRow](ctx, p.db, exec, "public") // hardcoded for now
 	if err != nil {
 		return nil, err
 	}

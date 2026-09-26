@@ -31,6 +31,11 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 cleaning up the data migrater code and makin the global function
 
 # TODO:
+- have the order of tables, index columns and other shit be in the state db, so we dont have to rerun querier to get schema on every migrater resume
+- do the cli 
+- CONTEXT
+- make the demo application
+- have a worker pool and get rid of the n+1 queries with em
 - make the backfill function work concurrently 
 
 design for that:
@@ -45,13 +50,11 @@ design for that:
 - note on this: sqlite doesnt support mutiple writes, so the parellalism would need to work in 2 chunks, always have the reads concurrent, but depending on the target, the writes can or cannot be concurrent
 
 
-flag to the user if a table doesnt have a unique index, or dont have a unique index where all columns are non nullable, fail this in the inspecter stage itself
+- flag to the user if a table doesnt have a unique index, or dont have a unique index where all columns are non nullable, fail this in the inspecter stage itself
 
 # Next
 - add resume to migrater (establish connection again and load everything back into memeory)
 - increase limit for reads, but fir writes (especially for sqlite), fit to the limitations of that db (999 for sqlite)
-- test the migrater
-- make the cli
 
 
 # missed/gaps:

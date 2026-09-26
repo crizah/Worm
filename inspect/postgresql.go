@@ -39,7 +39,7 @@ func (p *PInspector) Inspect(ctx context.Context) (*schema.Schema, error) {
 
 	g.Go(func() error {
 		var err error
-		dbName, err = p.q.DbName(ctx)
+		dbName, err = p.q.DbName(gCtx)
 		return err
 	})
 
