@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/jackc/pglogrepl"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
+	"github.com/lib/pq"
 )
 
 type PostgresDataMigrator struct {
@@ -47,7 +50,11 @@ func (p *PostgresDataMigrator) CreateSnapshot(ctx context.Context) error {
 	// one time thing, persistant guy, tells us which tables to create our lsn for
 	tableList := strings.Join(p.tables, ", ")
 	if _, err := p.db.ExecContext(ctx, fmt.Sprintf("CREATE PUBLICATION worm_pub FOR TABLE %s", tableList)); err != nil {
-		return fmt.Errorf("creating publication: %w", err)
+		var pqErr *pq.Error
+		if !errors.As(err, &pqErr) || pqErr.Code.Name() != "duplicate_object" {
+			return fmt.Errorf("creating publication: %w", err)
+		}
+		// publication already exists, its okay move on
 	}
 
 	// CREATE_REPLICATION_SLOT isnt sql, it needs a connection opened in replication mode, lib/pq cant do this
@@ -240,6 +247,7 @@ func (p *PostgresDataMigrator) backfill(ctx context.Context, conn queryer) error
 		if err := p.markTableDone(ctx, table); err != nil {
 			return err
 		}
+		log.Printf("[backfill] %s: done (%d rows)", table, totalRows)
 	}
 	return nil
 }
@@ -249,7 +257,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 	// do a START_REPLICATION SLOT <slotName> LOGICAL <lsn>
 	var slotName string
 	var lsn string
-	q := `SELECT slot_name, lsn FROM capture_snapshot_stage`
+	q := `SELECT slot_name, lsn FROM capture_snapshot_state`
 	if err := p.stateDb.QueryRowContext(ctx, q).Scan(&slotName, &lsn); err != nil {
 		return fmt.Errorf("reading lsn state : %s", err.Error())
 	}
@@ -290,6 +298,8 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 	relations := map[uint32]*pglogrepl.RelationMessage{}
 	receivedLSN := startLSN
 	nextStandbyUpdate := time.Now().Add(10 * time.Second)
+	rowsWritten := 0
+	nextLogAt := time.Now().Add(15 * time.Second)
 
 	for {
 		if time.Now().After(nextStandbyUpdate) {
@@ -297,6 +307,10 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				return fmt.Errorf("sending standby status update: %w", err)
 			}
 			nextStandbyUpdate = time.Now().Add(10 * time.Second)
+		}
+		if time.Now().After(nextLogAt) {
+			log.Printf("[stream] alive, %d rows written so far (lsn %s)", rowsWritten, receivedLSN)
+			nextLogAt = time.Now().Add(15 * time.Second)
 		}
 
 		recvCtx, cancel := context.WithDeadline(ctx, nextStandbyUpdate)
@@ -359,6 +373,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				if _, err := p.writer.Write(ctx, batch, p.colMap, 1); err != nil {
 					return fmt.Errorf("writing streamed insert for %s: %w", rel.RelationName, err)
 				}
+				rowsWritten++
 
 			case *pglogrepl.UpdateMessage:
 				rel, ok := relations[m.RelationID]
@@ -380,6 +395,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				if _, err := p.writer.Write(ctx, batch, p.colMap, 2); err != nil {
 					return fmt.Errorf("writing streamed update for %s: %w", rel.RelationName, err)
 				}
+				rowsWritten++
 
 			case *pglogrepl.DeleteMessage:
 				rel, ok := relations[m.RelationID]
@@ -401,6 +417,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				if _, err := p.writer.Write(ctx, batch, p.colMap, 3); err != nil {
 					return fmt.Errorf("writing streamed delete for %s: %w", rel.RelationName, err)
 				}
+				rowsWritten++
 
 			case *pglogrepl.CommitMessage:
 				if err := p.persistStreamLSN(m.CommitLSN); err != nil {
@@ -531,7 +548,7 @@ func valuesFor(names []string, columns []string, row []any) []any {
 }
 
 func (p *PostgresDataMigrator) persistStreamLSN(lsn pglogrepl.LSN) error {
-	_, err := p.stateDb.Exec(`UPDATE capture_snapshot_stage SET lsn = ? WHERE slot_name = ?`, lsn.String(), p.slotName)
+	_, err := p.stateDb.Exec(`UPDATE capture_snapshot_state SET lsn = ? WHERE slot_name = ?`, lsn.String(), p.slotName)
 	return err
 }
 func (p *PostgresDataMigrator) markTableDone(ctx context.Context, table string) error {

@@ -8,6 +8,7 @@ services:
       POSTGRES_DB: worm_dev
     ports:
       - "5432:5432"
+    command: ["postgres", "-c", "wal_level=logical"]
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:

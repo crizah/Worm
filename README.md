@@ -31,6 +31,7 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 
 # TODO:
 - CONTEXT
+- have a progress bar
 - the big test we have to do of the actual migrater lol
 - make the demo application
 - have a worker pool and get rid of the n+1 queries with em

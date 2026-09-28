@@ -57,14 +57,6 @@ func runMigrateData(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("source db connection not in context")
 	}
 
-	claimed, err := claimStage(ctx, stateDb, []int{1}, 2)
-	if err != nil {
-		return fmt.Errorf("claiming stage: %s", err.Error())
-	}
-	if !claimed {
-		return fmt.Errorf("wrong command bro. run resume or schema migrater")
-	}
-
 	// get the shit
 	stuff, err := getShit(ctx, stateDb)
 	if err != nil {
@@ -95,6 +87,16 @@ func runMigrateData(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("error creating snapshot %s", err.Error())
 	}
+
+	// claim here isntead of the start becqause its more convinient4me
+	claimed, err := claimStage(ctx, stateDb, []int{1}, 2)
+	if err != nil {
+		return fmt.Errorf("claiming stage: %s", err.Error())
+	}
+	if !claimed {
+		return fmt.Errorf("wrong command bro. run resume or schema migrater")
+	}
+
 	err = dataMigrater.Migrate(ctx)
 	if err != nil {
 		return fmt.Errorf("error migrating data %s", err.Error())
