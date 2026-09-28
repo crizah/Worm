@@ -1,6 +1,12 @@
 package cli
 
 import (
+	"database/sql"
+	"fmt"
+
+	datamigrator "github.com/crizah/Worm/data-migrator"
+	datawriter "github.com/crizah/Worm/data-writer"
+	"github.com/crizah/Worm/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -22,11 +28,89 @@ func init() {
 
 func runMigrateData(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	_ = ctx // TODO: pass into data-migrator / data-writer calls
 
-	// TODO: migrate-data logic goes here (CreateSnapshot + Backfill,
-	// currently sketched out in main.go).
-	// TODO: have a check here for if we have any state db entry, this command shouldnt run, it should be resume instead
+	stateDb, ok := ctx.Value(stateDBKey).(*sql.DB)
+	if !ok {
+		return fmt.Errorf("state db missing from context")
+	}
+	sourceDb, ok := ctx.Value(sourceDBKey).(*sql.DB)
+	if !ok {
+		return fmt.Errorf("source db missing from context")
+	}
+	targetDB, ok := ctx.Value(targetDBKey).(*sql.DB)
+	if !ok {
+		return fmt.Errorf("target db missing from context")
+	}
+
+	sourceDialect, ok := ctx.Value(sourceDialectKey).(schema.Dialect)
+	if !ok {
+		return fmt.Errorf("source dialect missing from context")
+	}
+
+	targetDialect, ok := ctx.Value(targetDialectKey).(schema.Dialect)
+	if !ok {
+		return fmt.Errorf("target dialect missing from context")
+	}
+
+	sourceDbConn, ok := ctx.Value(sourceDBConnKey).(string)
+	if !ok {
+		return fmt.Errorf("source db connection not in context")
+	}
+
+	var stage int
+	var err error
+	q := `SELECT stage from capture_stage`
+	err = stateDb.QueryRowContext(ctx, q).Scan(&stage)
+	if err != nil {
+		return fmt.Errorf("error querying state db")
+	}
+	if stage != 1 {
+		return fmt.Errorf("wrong command bro. run resume or schema migrater %d", stage)
+	}
+
+	// persist state here itself
+	err = persistStage(ctx, stateDb, 2)
+	if err != nil {
+		return fmt.Errorf("persisting stage: %s", err.Error())
+	}
+
+	// get the shit
+	stuff, err := getShit(ctx, stateDb)
+	if err != nil {
+		return fmt.Errorf("error getting shit %s", err.Error())
+	}
+
+	// data migrater belongs as per source connection type
+	// data writer belongs as per target connection type
+	var dataMigrater datamigrator.DM
+	var dataWriter datawriter.DW
+
+	switch targetDialect {
+	case 0:
+	// postgres
+	case 1:
+		dataWriter, err = datawriter.NewSqliteDW(targetDB, stateDb)
+		if err != nil {
+			return fmt.Errorf("error making datawriter %s", err.Error())
+		}
+	}
+	switch sourceDialect {
+	case 0:
+		// postgres
+		dataMigrater, err = datamigrator.NewPostgresDM(sourceDb, sourceDbConn, stateDb, stuff.Tables, stuff.ColMap, stuff.IndexMap, 500, dataWriter)
+	case 1:
+		// sqlite
+	}
+	err = dataMigrater.CreateSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("error creating snapshot %s", err.Error())
+	}
+	err = dataMigrater.Migrate(ctx)
+	if err != nil {
+		return fmt.Errorf("error migrating data %s", err.Error())
+	}
+
+	fmt.Printf("data migration done yayaya")
 
 	return nil
 }

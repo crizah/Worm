@@ -17,15 +17,16 @@ import (
 )
 
 type PostgresDataMigrator struct {
-	db         *sql.DB                  // our postgres db connection
-	connStr    string                   // our postgres conn string, needed to create replication connection
-	snapshotId string                   // returned snapshot id
-	stateDb    *sql.DB                  // state db to track snapshot
-	tables     []string                 // table names sorted that we get from emitter
-	tableIndex map[string]*schema.Index // the index we use for pagination, mapped to its table
-	limit      int                      // the batch limit of how many rows to process at a time, dont let it exceed 999
-	colMap     map[string]schema.Type   // stores the column type mapped to tableName+columnName
-	writer     datawriter.DW            // the writer interface, dont store this in here lol
+	db         *sql.DB  // our postgres db connection
+	connStr    string   // our postgres conn string, needed to create replication connection
+	snapshotId string   // returned snapshot id
+	stateDb    *sql.DB  // state db to track snapshot
+	tables     []string // table names sorted that we get from emitter
+	// tableIndex map[string]*schema.Index // the index we use for pagination, mapped to its table
+	tableIndex map[string]*schema.IndexRed // the index we use for pagination, mapped to its table
+	limit      int                         // the batch limit of how many rows to process at a time, dont let it exceed 999
+	colMap     map[string]schema.Type      // stores the column type mapped to tableName+columnName
+	writer     datawriter.DW               // the writer interface, dont store this in here lol
 
 	slotName string // current slot name
 	lsn      pglogrepl.LSN
@@ -34,57 +35,9 @@ type PostgresDataMigrator struct {
 	snapshotTx *sql.Tx // the transaction for the snapshot
 }
 
-func getIndex(t *schema.Table) (*schema.Index, error) {
-	// gives us the appropriate index to do pagination with
-	// priority: pk -> unique (not null)
-	// if neither exist, fail. TODO: have this faliure in the inspecter phase itself\
-	for _, index := range t.Indexes {
-		if index.IsPK {
-			return index, nil
-		}
-	}
+func NewPostgresDM(db *sql.DB, conn string, stateDb *sql.DB, tables []string, colMap map[string]schema.Type, indexmap map[string]*schema.IndexRed, limit int, w datawriter.DW) (*PostgresDataMigrator, error) {
 
-	// we didnt find a pk, check for non nullable unique contraints
-	for _, index := range t.Indexes {
-		if index.IsUnique {
-			// check if all the columns assocoated with it are not nullable
-			flag := false
-			for _, col := range index.Columns {
-				if col.IsNullable {
-					flag = true
-					break
-				}
-			}
-			if !flag {
-				// this index is valid
-				return index, nil
-			}
-		}
-	}
-	// cant have any index
-	return nil, fmt.Errorf("Didnt find any valid index") // TODO: again, have this failure exist on inspecter phase itself
-}
-
-func NewPostgresDM(db *sql.DB, conn string, stateDb *sql.DB, sc []*schema.Table, limit int, w datawriter.DW) (*PostgresDataMigrator, error) {
-	var t []string
-	var indexTable = make(map[string]*schema.Index) // maps table name to the index we use
-	cMap := make(map[string]schema.Type)
-	for _, table := range sc {
-		t = append(t, table.Name)
-		index, err := getIndex(table)
-
-		if err != nil {
-			return nil, err
-		}
-		for _, col := range table.Columns {
-			s := table.Name + col.Name
-			cMap[s] = col.Type
-		}
-
-		indexTable[table.Name] = index
-	}
-
-	p := &PostgresDataMigrator{db: db, connStr: conn, tables: t, tableIndex: indexTable, limit: limit, colMap: cMap, writer: w, stateDb: stateDb}
+	p := &PostgresDataMigrator{db: db, connStr: conn, tables: tables, tableIndex: indexmap, limit: limit, colMap: colMap, writer: w, stateDb: stateDb}
 
 	return p, nil
 }
@@ -171,10 +124,7 @@ func (p *PostgresDataMigrator) seedBatchState(ctx context.Context) error {
 		}
 
 		index := p.tableIndex[table]
-		var cols []string
-		for _, col := range index.Columns {
-			cols = append(cols, col.Name)
-		}
+		cols := index.ColumnNames
 
 		if err := p.persistBatchStatus(ctx, table, "pending", strings.Join(cols, ", "), 0, totalRows); err != nil {
 			return fmt.Errorf("seeding batch state for %s: %w", table, err)
@@ -401,7 +351,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				if err != nil {
 					return fmt.Errorf("decoding insert on %s: %w", rel.RelationName, err)
 				}
-				batch.IndexColumns = indexColumnsFor(p.tableIndex[rel.RelationName])
+				batch.IndexColumns = p.tableIndex[rel.RelationName].ColumnNames
 				if _, err := p.writer.Write(ctx, batch, p.colMap, 1); err != nil {
 					return fmt.Errorf("writing streamed insert for %s: %w", rel.RelationName, err)
 				}
@@ -415,7 +365,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				if err != nil {
 					return fmt.Errorf("decoding update on %s: %w", rel.RelationName, err)
 				}
-				batch.IndexColumns = indexColumnsFor(p.tableIndex[rel.RelationName])
+				batch.IndexColumns = p.tableIndex[rel.RelationName].ColumnNames
 
 				prevVals, err := p.prevIndexValues(rel, batch.IndexColumns, m.OldTuple, batch)
 				if err != nil {
@@ -432,7 +382,8 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				if !ok {
 					return fmt.Errorf("delete for unknown relation id %d - missing Relation message", m.RelationID)
 				}
-				indexColumns := indexColumnsFor(p.tableIndex[rel.RelationName])
+
+				indexColumns := p.tableIndex[rel.RelationName].ColumnNames
 
 				prevVals, err := p.prevIndexValues(rel, indexColumns, m.OldTuple, nil)
 				if err != nil {
@@ -575,14 +526,6 @@ func valuesFor(names []string, columns []string, row []any) []any {
 	return vals
 }
 
-func indexColumnsFor(idx *schema.Index) []string {
-	names := make([]string, len(idx.Columns))
-	for i, c := range idx.Columns {
-		names[i] = c.Name
-	}
-	return names
-}
-
 func (p *PostgresDataMigrator) persistStreamLSN(lsn pglogrepl.LSN) error {
 	_, err := p.stateDb.Exec(`UPDATE capture_snapshot_stage SET lsn = ? WHERE slot_name = ?`, lsn.String(), p.slotName)
 	return err
@@ -595,7 +538,7 @@ func (p *PostgresDataMigrator) markTableDone(ctx context.Context, table string) 
 	return err
 }
 
-func (p *PostgresDataMigrator) decode(ctx context.Context, t schema.Type, raw any) (any, error) {
+func (p *PostgresDataMigrator) decode(t schema.Type, raw any) (any, error) {
 	switch t.(type) {
 	case schema.BoolType:
 		return raw, nil // postgres already gives u bool
@@ -676,7 +619,7 @@ func (p *PostgresDataMigrator) resumeBackfill(ctx context.Context, q queryer, ta
 
 		for i, colName := range cols {
 			colType := p.colMap[tableName+colName]
-			decoded, err := p.decode(ctx, colType, rowValues[i])
+			decoded, err := p.decode(colType, rowValues[i])
 			if err != nil {
 				return nil, err
 			}

@@ -14,6 +14,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type ctxKey int
+
+const (
+	stateDBKey ctxKey = iota
+	targetDBKey
+	sourceDBKey
+	sourceDialectKey
+	targetDialectKey
+	sourceDBConnKey
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "worm",
 	Short: "Worm migrates schema and data between databases",
@@ -74,11 +85,30 @@ var rootCmd = &cobra.Command{
 			f.Close()
 		}
 
+		// ping all dbs
 		stateDb, err := utils.PingDB(1, stateDbPath) // pass this guy through via context (remove from structs bodies then)
 		if err != nil {
 
 			return fmt.Errorf("error reaching state db: %s", err.Error())
 		}
+
+		sourceDb, err := utils.PingDB(sourceDialect, sourceDbConn)
+		if err != nil {
+
+			return fmt.Errorf("error reaching source db: %s", err.Error())
+		}
+		targetDb, err := utils.PingDB(targetDialect, targetDbConn)
+		if err != nil {
+
+			return fmt.Errorf("error reaching target db: %s", err.Error())
+		}
+
+		cmd.SetContext(context.WithValue(cmd.Context(), stateDBKey, stateDb))
+		cmd.SetContext(context.WithValue(cmd.Context(), targetDBKey, targetDb))
+		cmd.SetContext(context.WithValue(cmd.Context(), sourceDBKey, sourceDb))
+		cmd.SetContext(context.WithValue(cmd.Context(), sourceDialectKey, sourceDialect))
+		cmd.SetContext(context.WithValue(cmd.Context(), targetDialectKey, targetDialect))
+		cmd.SetContext(context.WithValue(cmd.Context(), sourceDBConnKey, sourceDbConn))
 
 		return nil
 	},
