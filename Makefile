@@ -22,5 +22,10 @@ seed:
 	@until $(COMPOSE) exec -T postgres pg_isready -U postgres -d worm_dev >/dev/null 2>&1; do sleep 1; done
 	psql "$(DB_URL)" -f ./scripts/seed_data.sql
 
+# compares row counts between SOURCE_CONN_STR and TARGET_CONN_STR (from .env),
+# table by table - doesn't assume any particular schema
+counts:
+	go run ./scripts/checkcounts
 
-.PHONY: test-up dev-up seed
+
+.PHONY: test-up dev-up seed counts
