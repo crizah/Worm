@@ -44,6 +44,12 @@ func NewPostgresDM(db *sql.DB, conn string, stateDb *sql.DB, tables []string, co
 
 func (p *PostgresDataMigrator) CreateSnapshot(ctx context.Context) error {
 
+	// one time thing, persistant guy, tells us which tables to create our lsn for
+	tableList := strings.Join(p.tables, ", ")
+	if _, err := p.db.ExecContext(ctx, fmt.Sprintf("CREATE PUBLICATION worm_pub FOR TABLE %s", tableList)); err != nil {
+		return fmt.Errorf("creating publication: %w", err)
+	}
+
 	// CREATE_REPLICATION_SLOT isnt sql, it needs a connection opened in replication mode, lib/pq cant do this
 	cfg, err := pgconn.ParseConfig(p.connStr)
 	if err != nil {
@@ -164,8 +170,6 @@ func (p *PostgresDataMigrator) Migrate(ctx context.Context) error {
 }
 
 func (p *PostgresDataMigrator) Resume(ctx context.Context) error {
-	// the function that wraps this will have to make new struct again and rebuild schema every time.
-	// TODO: store that in the state db as well
 	// checks the pending tables to determine of this is resume on backfill or streaming
 	tables, err := p.checkPendingTables(ctx)
 	if err != nil {
@@ -173,7 +177,7 @@ func (p *PostgresDataMigrator) Resume(ctx context.Context) error {
 	}
 	if len(tables) != 0 {
 		if err := p.backfill(ctx, p.db); err != nil { // calling backfill here is a shitty choice, since it queries all the tables again.
-			// fix that at some point again
+			// TODO: fix that at some point again
 			// also, passing the conn string here cos() its reused to work on both live db and snapshot
 			return fmt.Errorf("backfilling: %w", err)
 		}

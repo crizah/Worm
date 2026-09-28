@@ -176,6 +176,33 @@ func getShit(ctx context.Context, stateDb *sql.DB) (schema.Stuff, error) {
 	return s, nil
 }
 
+func claimStage(ctx context.Context, stateDb *sql.DB, from []int, to int) (bool, error) {
+	// atomically moves the stage from one of `from` to `to`, only if it's currently
+	// at one of `from`, returns false (no error) if another run already claimed it
+	// we can go from
+	// 1->2
+	// 2-> 3
+	// 2, 3 -> 3
+	placeholders := make([]string, len(from))
+	args := make([]any, 0, len(from)+1)
+	args = append(args, to)
+	for i, f := range from {
+		placeholders[i] = "?"
+		args = append(args, f)
+	}
+	q := fmt.Sprintf(`UPDATE capture_stage SET stage = ? WHERE id = 1 AND stage IN (%s)`, strings.Join(placeholders, ", "))
+
+	res, err := stateDb.ExecContext(ctx, q, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
+}
+
 func persistStage(ctx context.Context, stateDb *sql.DB, stage int) error {
 	if _, err := stateDb.ExecContext(ctx,
 		`INSERT OR REPLACE INTO capture_stage (id, stage) VALUES (1, ?)`, stage); err != nil {

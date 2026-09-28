@@ -57,21 +57,12 @@ func runMigrateData(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("source db connection not in context")
 	}
 
-	var stage int
-	var err error
-	q := `SELECT stage from capture_stage`
-	err = stateDb.QueryRowContext(ctx, q).Scan(&stage)
+	claimed, err := claimStage(ctx, stateDb, []int{1}, 2)
 	if err != nil {
-		return fmt.Errorf("error querying state db")
+		return fmt.Errorf("claiming stage: %s", err.Error())
 	}
-	if stage != 1 {
-		return fmt.Errorf("wrong command bro. run resume or schema migrater %d", stage)
-	}
-
-	// persist state here itself
-	err = persistStage(ctx, stateDb, 2)
-	if err != nil {
-		return fmt.Errorf("persisting stage: %s", err.Error())
+	if !claimed {
+		return fmt.Errorf("wrong command bro. run resume or schema migrater")
 	}
 
 	// get the shit

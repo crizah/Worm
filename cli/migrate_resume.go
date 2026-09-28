@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 
+	datamigrator "github.com/crizah/Worm/data-migrator"
+	datawriter "github.com/crizah/Worm/data-writer"
+	"github.com/crizah/Worm/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -37,26 +40,60 @@ func runMigrateResume(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("target db missing from context")
 	}
 
-	var stage int
-	var err error
-	q := `SELECT stage from capture_stage`
-	err = stateDb.QueryRowContext(ctx, q).Scan(&stage)
+	sourceDialect, ok := ctx.Value(sourceDialectKey).(schema.Dialect)
+	if !ok {
+		return fmt.Errorf("source dialect missing from context")
+	}
+
+	targetDialect, ok := ctx.Value(targetDialectKey).(schema.Dialect)
+	if !ok {
+		return fmt.Errorf("target dialect missing from context")
+	}
+
+	sourceDbConn, ok := ctx.Value(sourceDBConnKey).(string)
+	if !ok {
+		return fmt.Errorf("source db connection not in context")
+	}
+
+	claimed, err := claimStage(ctx, stateDb, []int{2, 3}, 3)
 	if err != nil {
-		return fmt.Errorf("error querying state db")
+		return fmt.Errorf("claiming stage: %s", err.Error())
 	}
-	if stage != 2 || stage != 3 {
-		return fmt.Errorf("wrong command bro. run migrate and then data %d", stage)
+	if !claimed {
+		return fmt.Errorf("wrong command bro. run migrate-schema then migrate-data first")
 	}
 
-	// persist state here itself
-	err = persistStage(ctx, stateDb, 3)
+	// get the shit
+	stuff, err := getShit(ctx, stateDb)
 	if err != nil {
-		fmt.Errorf("persisting stage: %s", err.Error())
+		return fmt.Errorf("error getting shit %s", err.Error())
 	}
 
-	// make the public connection,
-	// read from the state db the things needed to build the migrater struct (table order, index columns etc)
-	// rebuild everytime
+	// rebuild that bitch up, we dont need to make any connectiosn, resume takes care of allat
+	var dataMigrater datamigrator.DM
+	var dataWriter datawriter.DW
 
+	switch targetDialect {
+	case 0:
+	// postgres
+	case 1:
+		dataWriter, err = datawriter.NewSqliteDW(targetDB, stateDb)
+		if err != nil {
+			return fmt.Errorf("error making datawriter %s", err.Error())
+		}
+	}
+	switch sourceDialect {
+	case 0:
+		// postgres
+		dataMigrater, err = datamigrator.NewPostgresDM(sourceDb, sourceDbConn, stateDb, stuff.Tables, stuff.ColMap, stuff.IndexMap, 500, dataWriter)
+	case 1:
+		// sqlite
+	}
+	err = dataMigrater.Resume(ctx)
+	if err != nil {
+		return fmt.Errorf("error resuming %s", err.Error())
+	}
+
+	fmt.Printf("yayay its in sync. you can resume later on again after a while to sync again")
 	return nil
 }
