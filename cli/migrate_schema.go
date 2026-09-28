@@ -130,14 +130,13 @@ func runMigrateSchema(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error creating state db table: %s", err.Error())
 	}
 
-	var schema *schema.Schema
+	var sch *schema.Schema
 	var inspecter inspect.Inspector
 
 	// querier -> inspecter -> emitter -> schema-migrator flow
 
 	switch sourceDialect {
-	case 1:
-		// postgres
+	case schema.PostgresDialect:
 		// querier
 		q, err := querier.NewPQuerier(sourceDb)
 		if err != nil {
@@ -146,12 +145,12 @@ func runMigrateSchema(cmd *cobra.Command, args []string) error {
 		// inspecter
 		inspecter = inspect.NewPInspector(q)
 
-	case 0:
+	case schema.SqliteDialect:
 		// TODO: sqlite, for later
 	}
 
 	// TODO: move the running of querier into querier??? why tf is it in inspecter???
-	schema, err = inspecter.Inspect(ctx) // runs the querier, adds shit to sc
+	sch, err = inspecter.Inspect(ctx) // runs the querier, adds shit to sc
 	if err != nil {
 
 		return fmt.Errorf("inspect: %s", err.Error())
@@ -159,10 +158,10 @@ func runMigrateSchema(cmd *cobra.Command, args []string) error {
 
 	// migration file
 	dir := "./.data/"
-	fileName := fmt.Sprintf("%s-migration.sql", schema.DbName)
+	fileName := fmt.Sprintf("%s-migration.sql", sch.DbName)
 
 	// emitter is interface independent, and so is schema migrater
-	emm := emitter.NewSqlEmitter(schema)
+	emm := emitter.NewSqlEmitter(sch)
 
 	_, err = emm.Emitt(ctx, dir, fileName)
 	if err != nil {
@@ -185,10 +184,10 @@ func runMigrateSchema(cmd *cobra.Command, args []string) error {
 	// schema migration done yaya
 	fmt.Print("schema migration done")
 
-	if err := persistPlanTables(ctx, stateDb, schema.Tables); err != nil {
+	if err := persistPlanTables(ctx, stateDb, sch.Tables); err != nil {
 		return fmt.Errorf("persisting plan tables: %s", err.Error())
 	}
-	if err := persistPlanColumns(ctx, stateDb, schema.Tables); err != nil {
+	if err := persistPlanColumns(ctx, stateDb, sch.Tables); err != nil {
 		return fmt.Errorf("persisting plan columns: %s", err.Error())
 	}
 

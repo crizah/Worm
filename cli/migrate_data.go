@@ -77,20 +77,19 @@ func runMigrateData(cmd *cobra.Command, args []string) error {
 	var dataWriter datawriter.DW
 
 	switch targetDialect {
-	case 0:
-	// postgres
-	case 1:
+	case schema.PostgresDialect:
+		// TODO: postgres data writer
+	case schema.SqliteDialect:
 		dataWriter, err = datawriter.NewSqliteDW(targetDB, stateDb)
 		if err != nil {
 			return fmt.Errorf("error making datawriter %s", err.Error())
 		}
 	}
 	switch sourceDialect {
-	case 0:
-		// postgres
+	case schema.PostgresDialect:
 		dataMigrater, err = datamigrator.NewPostgresDM(sourceDb, sourceDbConn, stateDb, stuff.Tables, stuff.ColMap, stuff.IndexMap, 500, dataWriter)
-	case 1:
-		// sqlite
+	case schema.SqliteDialect:
+		// TODO: sqlite source
 	}
 	err = dataMigrater.CreateSnapshot(ctx)
 	if err != nil {

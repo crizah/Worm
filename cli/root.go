@@ -64,7 +64,7 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("type mismatch, target db of type %d, conn str of type %d", targetDialect, tConnD)
 		}
 
-		if tConnD == 1 {
+		if tConnD == schema.SqliteDialect {
 			// sqlite, check the validity of the connection path
 			file := filepath.Base(targetDbConn) // "xxx.db"
 
@@ -86,9 +86,8 @@ var rootCmd = &cobra.Command{
 		}
 
 		// ping all dbs
-		stateDb, err := utils.PingDB(1, stateDbPath) // pass this guy through via context (remove from structs bodies then)
+		stateDb, err := utils.PingDB(schema.SqliteDialect, stateDbPath) // pass this guy through via context (remove from structs bodies then)
 		if err != nil {
-
 			return fmt.Errorf("error reaching state db: %s", err.Error())
 		}
 

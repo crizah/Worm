@@ -28,12 +28,10 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 - schema migrator
 
 # working on:
-cleaning up the data migrater code and makin the global function
 
 # TODO:
-- have the order of tables, index columns and other shit be in the state db, so we dont have to rerun querier to get schema on every migrater resume
-- do the cli 
 - CONTEXT
+- the big test we have to do of the actual migrater lol
 - make the demo application
 - have a worker pool and get rid of the n+1 queries with em
 - make the backfill function work concurrently 
