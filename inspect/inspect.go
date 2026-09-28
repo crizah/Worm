@@ -212,9 +212,9 @@ func buildDefaultExp(dataType schema.Type, def *string) schema.Expr {
 	if idx == -1 {
 		// no paranthesis, its a raw exp
 		// normalise the val if its a bool
-		if b, isBool := dataType.(schema.BoolType); isBool {
+		if _, isBool := dataType.(schema.BoolType); isBool {
 			// NOTE: POSTGRES SPECIFIC HERE, we need to normalise the value
-			if b.Val == "true" {
+			if val == "true" {
 				return &schema.RawExpr{
 					Val:     "true",
 					ExpType: dataType,
@@ -227,8 +227,12 @@ func buildDefaultExp(dataType schema.Type, def *string) schema.Expr {
 			}
 
 		}
+		// same cast-and-quote stripping the enum branch above does, eg
+		// "'{}'::jsonb" -> "{}", "'hello'::text" -> "hello", "5" -> "5" (no-op)
+		parts := strings.Split(val, "::")
+		cleanVal := strings.Trim(parts[0], "'")
 		return &schema.RawExpr{
-			Val:     val,
+			Val:     cleanVal,
 			ExpType: dataType,
 		}
 	}
