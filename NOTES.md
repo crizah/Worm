@@ -26,11 +26,11 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 - inspector for postgres->schema
 - emitter (schema->sqlite migration file)
 - schema migrator
+- naive data migrater
 
 # working on:
 
 # TODO:
-- CONTEXT
 - have a progress bar along with time taken 
 - make the demo application
 - have a worker pool and get rid of the n+1 queries with em
@@ -53,7 +53,6 @@ design for that:
 - emitter inspecter and querier for counterparts
 
 # Next
-- add resume to migrater (establish connection again and load everything back into memeory)
 - increase limit for reads, but fir writes (especially for sqlite), fit to the limitations of that db (999 for sqlite)
 
 

@@ -72,6 +72,23 @@ func (sm *SchemaMigrator) MigrateSchema(ctx context.Context) error {
 	// release lock happens via defer sm.mu.Unlock() above
 }
 
+func (sm *SchemaMigrator) Reset(ctx context.Context) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	tx, err := sm.db.Begin()
+	if err != nil {
+		return fmt.Errorf("starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := sm.wipe(tx); err != nil {
+		return fmt.Errorf("wiping db state: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 func splitStatements(migration string) []string {
 	rawStmts := strings.Split(migration, ";")
 
