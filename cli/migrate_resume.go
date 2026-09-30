@@ -57,7 +57,7 @@ func runMigrateResume(cmd *cobra.Command, args []string) error {
 
 	claimed, err := claimStage(ctx, stateDb, []int{2, 3}, 3)
 	if err != nil {
-		return fmt.Errorf("claiming stage: %s", err.Error())
+		return fmt.Errorf("claiming stage: %w", err)
 	}
 	if !claimed {
 		return fmt.Errorf("wrong command bro. run migrate-schema then migrate-data first")
@@ -66,7 +66,7 @@ func runMigrateResume(cmd *cobra.Command, args []string) error {
 	// get the shit
 	stuff, err := getShit(ctx, stateDb)
 	if err != nil {
-		return fmt.Errorf("error getting shit %s", err.Error())
+		return fmt.Errorf("error getting shit: %w", err)
 	}
 
 	// rebuild that bitch up, we dont need to make any connectiosn, resume takes care of allat
@@ -90,7 +90,7 @@ func runMigrateResume(cmd *cobra.Command, args []string) error {
 	}
 	err = dataMigrater.Resume(ctx)
 	if err != nil {
-		return fmt.Errorf("error resuming %s", err.Error())
+		return fmt.Errorf("error resuming: %w", err)
 	}
 
 	fmt.Printf("yayay its in sync. you can resume later on again after a while to sync again")

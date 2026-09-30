@@ -180,7 +180,7 @@ func (sq *SQLiteDataMigrator) writeInsert(ctx context.Context, b *schema.Batch, 
 	}
 
 	// begin transaction
-	tx, err := sq.targetDb.Begin()
+	tx, err := sq.targetDb.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("beginning target tx: %w", err)
 	}
@@ -210,7 +210,7 @@ func (sq *SQLiteDataMigrator) writeInsert(ctx context.Context, b *schema.Batch, 
 
 	// batch insert
 	stmt := insertPrefix + placeHolders
-	if _, err := tx.Exec(stmt, args...); err != nil {
+	if _, err := tx.ExecContext(ctx, stmt, args...); err != nil {
 		return nil, fmt.Errorf("inserting into %s: %w", b.Table, err)
 	}
 
@@ -242,7 +242,7 @@ func (sq *SQLiteDataMigrator) writeInsert(ctx context.Context, b *schema.Batch, 
 	}
 
 	// checkpoint is only written after the target commit succeeds
-	_, err = sq.stateDb.Exec(
+	_, err = sq.stateDb.ExecContext(ctx,
 		`UPDATE capture_batch_state
 		 SET rows_done = rows_done + ?, last_index_values = ?, status = 'in_progress', updated_at = ?
 		 WHERE table_name = ?`,

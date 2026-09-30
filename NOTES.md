@@ -31,11 +31,11 @@ then, each column/data batch gets normalised first, then emitted into desired ty
 
 # TODO:
 - CONTEXT
-- have a progress bar
-- the big test we have to do of the actual migrater lol
+- have a progress bar along with time taken 
 - make the demo application
 - have a worker pool and get rid of the n+1 queries with em
 - make the backfill function work concurrently 
+- measure difference between time taken by each
 
 design for that:
 - we need to change sort tables to be in levels, level 1: all tables with degrees 0, level 2: all dependedt tables in order
@@ -50,6 +50,7 @@ design for that:
 
 
 - flag to the user if a table doesnt have a unique index, or dont have a unique index where all columns are non nullable, fail this in the inspecter stage itself
+- emitter inspecter and querier for counterparts
 
 # Next
 - add resume to migrater (establish connection again and load everything back into memeory)

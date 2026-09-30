@@ -60,7 +60,7 @@ func runMigrateData(cmd *cobra.Command, args []string) error {
 	// get the shit
 	stuff, err := getShit(ctx, stateDb)
 	if err != nil {
-		return fmt.Errorf("error getting shit %s", err.Error())
+		return fmt.Errorf("error getting shit: %w", err)
 	}
 
 	// data migrater belongs as per source connection type
@@ -85,13 +85,13 @@ func runMigrateData(cmd *cobra.Command, args []string) error {
 	}
 	err = dataMigrater.CreateSnapshot(ctx)
 	if err != nil {
-		return fmt.Errorf("error creating snapshot %s", err.Error())
+		return fmt.Errorf("error creating snapshot: %w", err)
 	}
 
 	// claim here isntead of the start becqause its more convinient4me
 	claimed, err := claimStage(ctx, stateDb, []int{1}, 2)
 	if err != nil {
-		return fmt.Errorf("claiming stage: %s", err.Error())
+		return fmt.Errorf("claiming stage: %w", err)
 	}
 	if !claimed {
 		return fmt.Errorf("wrong command bro. run resume or schema migrater")
@@ -99,7 +99,7 @@ func runMigrateData(cmd *cobra.Command, args []string) error {
 
 	err = dataMigrater.Migrate(ctx)
 	if err != nil {
-		return fmt.Errorf("error migrating data %s", err.Error())
+		return fmt.Errorf("error migrating data: %w", err)
 	}
 
 	fmt.Printf("data migration done yayaya")

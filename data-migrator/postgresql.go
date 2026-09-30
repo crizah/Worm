@@ -19,6 +19,8 @@ import (
 	"github.com/lib/pq"
 )
 
+const writeTimeout = 30 * time.Second
+
 type PostgresDataMigrator struct {
 	db         *sql.DB  // our postgres db connection
 	connStr    string   // our postgres conn string, needed to create replication connection
@@ -36,6 +38,13 @@ type PostgresDataMigrator struct {
 	replConn *pgconn.PgConn // kept open on purpose: closing it invalidates the exported snapshot
 
 	snapshotTx *sql.Tx // the transaction for the snapshot
+}
+
+func (p *PostgresDataMigrator) write(ctx context.Context, b *schema.Batch, t int) ([]any, error) {
+	// writes with timeout TODO: make timeout configurable
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeTimeout)
+	defer cancel()
+	return p.writer.Write(wctx, b, p.colMap, t)
 }
 
 func NewPostgresDM(db *sql.DB, conn string, stateDb *sql.DB, tables []string, colMap map[string]schema.Type, indexmap map[string]*schema.IndexRed, limit int, w datawriter.DW) (*PostgresDataMigrator, error) {
@@ -230,13 +239,16 @@ func (p *PostgresDataMigrator) backfill(ctx context.Context, conn queryer) error
 			}
 		}
 		for rowsDone < totalRows {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			batch, err := p.resumeBackfill(ctx, conn, table, rowsDone, indexColumnComma, lastVals)
 			if err != nil {
 				return err
 			}
 			batch.IndexColumns = indexColumns
 			// writer encodes + writes to target + persists rows_done and last_index_values on success
-			lv, err := p.writer.Write(ctx, batch, p.colMap, 1)
+			lv, err := p.write(ctx, batch, 1)
 			if err != nil {
 				return err
 			}
@@ -259,7 +271,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 	var lsn string
 	q := `SELECT slot_name, lsn FROM capture_snapshot_state`
 	if err := p.stateDb.QueryRowContext(ctx, q).Scan(&slotName, &lsn); err != nil {
-		return fmt.Errorf("reading lsn state : %s", err.Error())
+		return fmt.Errorf("reading lsn state: %w", err)
 	}
 
 	if conn != nil {
@@ -302,6 +314,9 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 	nextLogAt := time.Now().Add(15 * time.Second)
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if time.Now().After(nextStandbyUpdate) {
 			if err := pglogrepl.SendStandbyStatusUpdate(ctx, p.replConn, pglogrepl.StandbyStatusUpdate{WALWritePosition: receivedLSN}); err != nil {
 				return fmt.Errorf("sending standby status update: %w", err)
@@ -317,6 +332,9 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 		rawMsg, err := p.replConn.ReceiveMessage(recvCtx)
 		cancel()
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if pgconn.Timeout(err) {
 				continue // just means its time to loop around and send a standby status update
 			}
@@ -370,7 +388,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 					return fmt.Errorf("decoding insert on %s: %w", rel.RelationName, err)
 				}
 				batch.IndexColumns = p.tableIndex[rel.RelationName].ColumnNames
-				if _, err := p.writer.Write(ctx, batch, p.colMap, 1); err != nil {
+				if _, err := p.write(ctx, batch, 1); err != nil {
 					return fmt.Errorf("writing streamed insert for %s: %w", rel.RelationName, err)
 				}
 				rowsWritten++
@@ -392,7 +410,7 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 				}
 				batch.PrevVals = [][]any{prevVals}
 
-				if _, err := p.writer.Write(ctx, batch, p.colMap, 2); err != nil {
+				if _, err := p.write(ctx, batch, 2); err != nil {
 					return fmt.Errorf("writing streamed update for %s: %w", rel.RelationName, err)
 				}
 				rowsWritten++
@@ -414,13 +432,16 @@ func (p *PostgresDataMigrator) streamData(ctx context.Context, conn *pgconn.PgCo
 					IndexColumns: indexColumns,
 					PrevVals:     [][]any{prevVals},
 				}
-				if _, err := p.writer.Write(ctx, batch, p.colMap, 3); err != nil {
+				if _, err := p.write(ctx, batch, 3); err != nil {
 					return fmt.Errorf("writing streamed delete for %s: %w", rel.RelationName, err)
 				}
 				rowsWritten++
 
 			case *pglogrepl.CommitMessage:
-				if err := p.persistStreamLSN(m.CommitLSN); err != nil {
+				wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeTimeout)
+				err := p.persistStreamLSN(wctx, m.CommitLSN)
+				cancel()
+				if err != nil {
 					return fmt.Errorf("persisting stream lsn: %w", err)
 				}
 			}
@@ -547,8 +568,8 @@ func valuesFor(names []string, columns []string, row []any) []any {
 	return vals
 }
 
-func (p *PostgresDataMigrator) persistStreamLSN(lsn pglogrepl.LSN) error {
-	_, err := p.stateDb.Exec(`UPDATE capture_snapshot_state SET lsn = ? WHERE slot_name = ?`, lsn.String(), p.slotName)
+func (p *PostgresDataMigrator) persistStreamLSN(ctx context.Context, lsn pglogrepl.LSN) error {
+	_, err := p.stateDb.ExecContext(ctx, `UPDATE capture_snapshot_state SET lsn = ? WHERE slot_name = ?`, lsn.String(), p.slotName)
 	return err
 }
 func (p *PostgresDataMigrator) markTableDone(ctx context.Context, table string) error {
