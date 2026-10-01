@@ -64,34 +64,20 @@ func (sq *SQLiteDataMigrator) writeUpdate(ctx context.Context, b *schema.Batch, 
 		return fmt.Errorf("beginning target tx: %w", err)
 	}
 	defer tx.Rollback()
-
-	// handles possibly change values of unique indexes as well (diff syntax, but the below one gets the gist)
-	// UPDATE table_name
-	//  SET column_1 = v.column_1,
-	//  columne_2 = v.column_2
-	//  FROM (VALUES
-	//   (val1, 'val2', 'val3', val4),
-	//   (val1, 'val2', 'val3', val4)
-	//  ) AS v(index1, index2,column1, column2)
-	//  WHERE table.index1 = index1
-	//   AND table.index2= index2;
-
-	oldAliasNames := make([]string, len(b.IndexColumns))
-	for i, idx := range b.IndexColumns {
-		oldAliasNames[i] = "old_" + idx
-	}
-	aliasCols := append(append([]string{}, oldAliasNames...), b.Columns...)
-	rowPlaceholder := "(" + strings.TrimSuffix(strings.Repeat("?,", len(aliasCols)), ",") + ")"
+	numIdx := len(b.IndexColumns)
 
 	setClauses := make([]string, len(b.Columns))
 	for i, col := range b.Columns {
-		setClauses[i] = fmt.Sprintf("%s = a.%s", col, col)
+		setClauses[i] = fmt.Sprintf("%s = a.column%d", col, numIdx+i+1)
 	}
 
 	whereClauses := make([]string, len(b.IndexColumns))
 	for i, idx := range b.IndexColumns {
-		whereClauses[i] = fmt.Sprintf("%s.%s = a.%s", b.Table, idx, oldAliasNames[i])
+		whereClauses[i] = fmt.Sprintf("%s.%s = a.column%d", b.Table, idx, i+1)
 	}
+
+	numCols := numIdx + len(b.Columns)
+	rowPlaceholder := "(" + strings.TrimSuffix(strings.Repeat("?,", numCols), ",") + ")"
 
 	valuePlaceholders := make([]string, len(b.Rows))
 	var args []any
@@ -115,11 +101,10 @@ func (sq *SQLiteDataMigrator) writeUpdate(ctx context.Context, b *schema.Batch, 
 	}
 
 	updateQuery := fmt.Sprintf(
-		"UPDATE %s SET %s FROM (VALUES %s) AS a(%s) WHERE %s",
+		"UPDATE %s SET %s FROM (VALUES %s) AS a WHERE %s",
 		b.Table,
 		strings.Join(setClauses, ", "),
 		strings.Join(valuePlaceholders, ", "),
-		strings.Join(aliasCols, ", "),
 		strings.Join(whereClauses, " AND "),
 	)
 
