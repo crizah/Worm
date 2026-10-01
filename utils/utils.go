@@ -19,6 +19,17 @@ func PingDB(t schema.Dialect, str string) (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("pinging db: %w", err)
 	}
+
+	if t == schema.SqliteDialect {
+		// batch the fsynsc sqlite does so we dont kill our cpu
+		if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+			return nil, fmt.Errorf("setting wal mode: %w", err)
+		}
+		if _, err := db.Exec("PRAGMA synchronous=NORMAL"); err != nil {
+			return nil, fmt.Errorf("setting synchronous mode: %w", err)
+		}
+	}
+
 	return db, nil
 
 }
